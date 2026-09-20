@@ -1,7 +1,8 @@
+@rendermode InteractiveServer
 @inject IJSRuntime JS
 
 <button type="button" class="btn btn-outline-secondary btn-sm theme-toggle" @onclick="Toggle" title="Переключить тему">
-    @(isDark ? "☀️ Светлая" : "🌙 Тёмная")
+    @(isDark ? "🌙 Тёмная тема" : "☀️ Светлая тема")
 </button>
 
 @code {
