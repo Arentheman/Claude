@@ -10,6 +10,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Session> Sessions => Set<Session>();
     public DbSet<PlayerCharacter> PlayerCharacters => Set<PlayerCharacter>();
     public DbSet<InventoryItem> InventoryItems => Set<InventoryItem>();
+    public DbSet<CharacterFeature> CharacterFeatures => Set<CharacterFeature>();
+    public DbSet<CharacterAttachment> CharacterAttachments => Set<CharacterAttachment>();
     public DbSet<StatBlock> StatBlocks => Set<StatBlock>();
     public DbSet<Encounter> Encounters => Set<Encounter>();
     public DbSet<EncounterParticipant> EncounterParticipants => Set<EncounterParticipant>();

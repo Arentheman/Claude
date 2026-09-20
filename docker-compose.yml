@@ -9,6 +9,8 @@ services:
       Database__Provider: Postgres
       ConnectionStrings__Default: "Host=db;Database=dungeonmaster;Username=dma;Password=${DB_PASSWORD:?set DB_PASSWORD}"
       App__OpenBrowserOnStart: "false"
+    volumes:
+      - dma-uploads:/app/uploads
     depends_on:
       - db
 
@@ -23,3 +25,4 @@ services:
 
 volumes:
   dma-postgres-data:
+  dma-uploads:

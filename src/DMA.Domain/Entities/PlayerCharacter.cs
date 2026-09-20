@@ -17,8 +17,14 @@ public class PlayerCharacter
     public int ArmorClass { get; set; }
 
     public AbilityScores Abilities { get; set; } = new();
+    public Currency Currency { get; set; } = new();
+
+    /// <summary>Stored file name of the portrait (see IFileStorageService), or null if none set.</summary>
+    public string? PortraitPath { get; set; }
 
     public string Notes { get; set; } = string.Empty;
 
     public List<InventoryItem> Inventory { get; set; } = new();
+    public List<CharacterFeature> Features { get; set; } = new();
+    public List<CharacterAttachment> Attachments { get; set; } = new();
 }

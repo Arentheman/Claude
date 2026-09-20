@@ -3,9 +3,11 @@ using DMA.Application;
 using DMA.Infrastructure;
 using DMA.Infrastructure.Data;
 using DMA.Infrastructure.Data.Seed;
+using DMA.Infrastructure.Files;
 using DMA.Web.Components;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -35,6 +37,14 @@ if (!app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 
 app.UseStaticFiles();
+
+var fileStorage = app.Services.GetRequiredService<FileStorageService>();
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(fileStorage.RootPath),
+    RequestPath = "/uploads"
+});
+
 app.UseAntiforgery();
 
 app.MapRazorComponents<App>()

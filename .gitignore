@@ -9,6 +9,9 @@ publish/
 *.db-shm
 *.db-wal
 
+## Uploaded portraits/attachments (local file storage)
+src/DMA.Web/uploads/
+
 ## IDE
 .vs/
 .vscode/

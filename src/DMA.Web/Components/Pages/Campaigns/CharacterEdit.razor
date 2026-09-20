@@ -2,6 +2,8 @@
 @rendermode InteractiveServer
 @using DMA.Application.Characters
 @using DMA.Domain.Entities
+@using DMA.Domain.Enums
+@using Microsoft.AspNetCore.Components.Forms
 @inject PlayerCharacterService CharacterService
 @inject NavigationManager Nav
 
@@ -16,120 +18,273 @@ else
     <a href="@($"/campaigns/{CampaignId}")">&larr; К кампании</a>
     <h1>@(IsNew ? "Новый персонаж" : character.Name)</h1>
 
-    <EditForm Model="character" OnValidSubmit="Save" FormName="edit-character">
-        <div class="row mb-3">
-            <div class="col-md-4">
-                <label class="form-label">Имя персонажа</label>
-                <InputText class="form-control" @bind-Value="character.Name" />
+    <div class="section-card">
+        <EditForm Model="character" OnValidSubmit="Save" FormName="edit-character">
+            <div class="row mb-3">
+                <div class="col-auto text-center">
+                    @if (!IsNew)
+                    {
+                        @if (!string.IsNullOrEmpty(character.PortraitPath))
+                        {
+                            <img class="avatar-circle avatar-circle-lg d-block mb-2" src="@($"/uploads/{character.PortraitPath}")" alt="@character.Name" />
+                        }
+                        else
+                        {
+                            <div class="avatar-circle-lg-placeholder mb-2">@Initials(character.Name)</div>
+                        }
+                        <InputFile OnChange="OnPortraitSelected" class="form-control form-control-sm" accept="image/*" />
+                    }
+                    else
+                    {
+                        <div class="avatar-circle-lg-placeholder mb-2">?</div>
+                        <div class="text-secondary small" style="max-width:120px">Портрет можно добавить после сохранения</div>
+                    }
+                </div>
+                <div class="col">
+                    <div class="row mb-2">
+                        <div class="col-md-4">
+                            <label class="form-label">Имя персонажа</label>
+                            <InputText class="form-control" @bind-Value="character.Name" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Игрок</label>
+                            <InputText class="form-control" @bind-Value="character.PlayerName" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Раса</label>
+                            <InputText class="form-control" @bind-Value="character.Race" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Класс</label>
+                            <InputText class="form-control" @bind-Value="character.Class" />
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-3">
+                            <label class="form-label">Уровень</label>
+                            <InputNumber class="form-control" @bind-Value="character.Level" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">HP текущее</label>
+                            <InputNumber class="form-control" @bind-Value="character.CurrentHp" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">HP максимум</label>
+                            <InputNumber class="form-control" @bind-Value="character.MaxHp" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">AC</label>
+                            <InputNumber class="form-control" @bind-Value="character.ArmorClass" />
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="col-md-4">
-                <label class="form-label">Игрок</label>
-                <InputText class="form-control" @bind-Value="character.PlayerName" />
-            </div>
-            <div class="col-md-2">
-                <label class="form-label">Раса</label>
-                <InputText class="form-control" @bind-Value="character.Race" />
-            </div>
-            <div class="col-md-2">
-                <label class="form-label">Класс</label>
-                <InputText class="form-control" @bind-Value="character.Class" />
-            </div>
-        </div>
 
-        <div class="row mb-3">
-            <div class="col-md-2">
-                <label class="form-label">Уровень</label>
-                <InputNumber class="form-control" @bind-Value="character.Level" />
-            </div>
-            <div class="col-md-2">
-                <label class="form-label">HP текущее</label>
-                <InputNumber class="form-control" @bind-Value="character.CurrentHp" />
-            </div>
-            <div class="col-md-2">
-                <label class="form-label">HP максимум</label>
-                <InputNumber class="form-control" @bind-Value="character.MaxHp" />
-            </div>
-            <div class="col-md-2">
-                <label class="form-label">AC</label>
-                <InputNumber class="form-control" @bind-Value="character.ArmorClass" />
-            </div>
-        </div>
+            <hr />
 
-        <h5>Характеристики</h5>
-        <div class="row mb-3">
-            <div class="col">
-                <label class="form-label">Сила</label>
-                <InputNumber class="form-control" @bind-Value="character.Abilities.Strength" />
+            <div class="row mb-3">
+                <div class="col-md-3">
+                    <h5>Характеристики</h5>
+                    <div class="ability-stack">
+                        <div class="ability-box">
+                            <span class="ability-label">Сила</span>
+                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="character.Abilities.Strength" />
+                        </div>
+                        <div class="ability-box">
+                            <span class="ability-label">Ловкость</span>
+                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="character.Abilities.Dexterity" />
+                        </div>
+                        <div class="ability-box">
+                            <span class="ability-label">Телосложение</span>
+                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="character.Abilities.Constitution" />
+                        </div>
+                        <div class="ability-box">
+                            <span class="ability-label">Интеллект</span>
+                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="character.Abilities.Intelligence" />
+                        </div>
+                        <div class="ability-box">
+                            <span class="ability-label">Мудрость</span>
+                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="character.Abilities.Wisdom" />
+                        </div>
+                        <div class="ability-box">
+                            <span class="ability-label">Харизма</span>
+                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="character.Abilities.Charisma" />
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-9">
+                    <h5>Заметки</h5>
+                    <InputTextArea class="form-control h-100" @bind-Value="character.Notes" rows="10" />
+                </div>
             </div>
-            <div class="col">
-                <label class="form-label">Ловкость</label>
-                <InputNumber class="form-control" @bind-Value="character.Abilities.Dexterity" />
-            </div>
-            <div class="col">
-                <label class="form-label">Телосложение</label>
-                <InputNumber class="form-control" @bind-Value="character.Abilities.Constitution" />
-            </div>
-            <div class="col">
-                <label class="form-label">Интеллект</label>
-                <InputNumber class="form-control" @bind-Value="character.Abilities.Intelligence" />
-            </div>
-            <div class="col">
-                <label class="form-label">Мудрость</label>
-                <InputNumber class="form-control" @bind-Value="character.Abilities.Wisdom" />
-            </div>
-            <div class="col">
-                <label class="form-label">Харизма</label>
-                <InputNumber class="form-control" @bind-Value="character.Abilities.Charisma" />
-            </div>
-        </div>
 
-        <div class="mb-3">
-            <label class="form-label">Заметки</label>
-            <InputTextArea class="form-control" @bind-Value="character.Notes" rows="3" />
-        </div>
+            <hr />
 
-        <button type="submit" class="btn btn-primary">Сохранить</button>
-        @if (!IsNew)
-        {
-            <button type="button" class="btn btn-outline-danger" @onclick="Delete">Удалить персонажа</button>
-        }
-    </EditForm>
+            <h5>Кошелёк</h5>
+            <div class="row mb-3">
+                <div class="col-md-2">
+                    <label class="form-label">ММ (медные)</label>
+                    <InputNumber class="form-control" @bind-Value="character.Currency.CopperPieces" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">СМ (серебряные)</label>
+                    <InputNumber class="form-control" @bind-Value="character.Currency.SilverPieces" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">ЭМ (электрум)</label>
+                    <InputNumber class="form-control" @bind-Value="character.Currency.ElectrumPieces" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">ЗМ (золотые)</label>
+                    <InputNumber class="form-control" @bind-Value="character.Currency.GoldPieces" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">ПМ (платиновые)</label>
+                    <InputNumber class="form-control" @bind-Value="character.Currency.PlatinumPieces" />
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary">Сохранить</button>
+            @if (!IsNew)
+            {
+                <button type="button" class="btn btn-outline-danger" @onclick="Delete">Удалить персонажа</button>
+            }
+        </EditForm>
+    </div>
 
     @if (!IsNew)
     {
-        <hr />
-        <h5>Инвентарь</h5>
-        <table class="table table-sm">
-            <thead><tr><th>Предмет</th><th>Кол-во</th><th>Заметки</th><th></th></tr></thead>
-            <tbody>
-                @foreach (var item in character.Inventory)
+        <div class="section-card">
+            <h2>Заклинания и способности</h2>
+            @if (character.Features.Count > 0)
+            {
+                <table class="table table-sm">
+                    <thead><tr><th>Название</th><th>Тип</th><th>Ур.</th><th>Описание</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var f in character.Features.OrderBy(f => f.Type).ThenBy(f => f.Level).ThenBy(f => f.Name))
+                        {
+                            <tr>
+                                <td>@f.Name</td>
+                                <td><span class="badge bg-@(f.Type == CharacterFeatureType.Spell ? "info" : "secondary")">@(f.Type == CharacterFeatureType.Spell ? "Заклинание" : "Способность")</span></td>
+                                <td>@(f.Type == CharacterFeatureType.Spell ? (f.Level == 0 ? "Заговор" : f.Level?.ToString()) : "")</td>
+                                <td class="text-break">@f.Description</td>
+                                <td><button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveFeature(f.Id)">Удалить</button></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+            <EditForm Model="newFeature" OnValidSubmit="AddFeature" FormName="add-feature">
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label">Название</label>
+                        <InputText class="form-control" @bind-Value="newFeature.Name" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Тип</label>
+                        <InputSelect class="form-select" @bind-Value="newFeature.Type">
+                            <option value="@CharacterFeatureType.Ability">Способность</option>
+                            <option value="@CharacterFeatureType.Spell">Заклинание</option>
+                        </InputSelect>
+                    </div>
+                    @if (newFeature.Type == CharacterFeatureType.Spell)
+                    {
+                        <div class="col-md-1">
+                            <label class="form-label">Ур.</label>
+                            <InputNumber class="form-control" @bind-Value="newFeature.Level" />
+                        </div>
+                    }
+                    <div class="col-md-4">
+                        <label class="form-label">Описание</label>
+                        <InputText class="form-control" @bind-Value="newFeature.Description" />
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-success" disabled="@string.IsNullOrWhiteSpace(newFeature.Name)">+ Добавить</button>
+                    </div>
+                </div>
+            </EditForm>
+        </div>
+
+        <div class="section-card">
+            <h2>Инвентарь</h2>
+            @foreach (var category in Enum.GetValues<InventoryItemCategory>())
+            {
+                var items = character.Inventory.Where(i => i.Category == category).ToList();
+                @if (items.Count > 0)
                 {
-                    <tr>
-                        <td>@item.Name</td>
-                        <td>@item.Quantity</td>
-                        <td>@item.Notes</td>
-                        <td><button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveItem(item.Id)">Удалить</button></td>
-                    </tr>
+                    <h6 class="text-secondary">@CategoryLabel(category)</h6>
+                    <table class="table table-sm mb-3">
+                        <thead><tr><th>Предмет</th><th>Кол-во</th><th>Заметки</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var item in items)
+                            {
+                                <tr>
+                                    <td>@item.Name</td>
+                                    <td>@item.Quantity</td>
+                                    <td>@item.Notes</td>
+                                    <td><button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveItem(item.Id)">Удалить</button></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
                 }
-            </tbody>
-        </table>
-        <EditForm Model="newItem" OnValidSubmit="AddItem" FormName="add-item" class="row g-2 align-items-end">
-            <div class="col-md-4">
-                <label class="form-label">Название</label>
-                <InputText class="form-control" @bind-Value="newItem.Name" />
+            }
+            <EditForm Model="newItem" OnValidSubmit="AddItem" FormName="add-item">
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label">Название</label>
+                        <InputText class="form-control" @bind-Value="newItem.Name" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Категория</label>
+                        <InputSelect class="form-select" @bind-Value="newItem.Category">
+                            @foreach (var category in Enum.GetValues<InventoryItemCategory>())
+                            {
+                                <option value="@category">@CategoryLabel(category)</option>
+                            }
+                        </InputSelect>
+                    </div>
+                    <div class="col-md-1">
+                        <label class="form-label">Кол-во</label>
+                        <InputNumber class="form-control" @bind-Value="newItem.Quantity" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Заметки</label>
+                        <InputText class="form-control" @bind-Value="newItem.Notes" />
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-success" disabled="@string.IsNullOrWhiteSpace(newItem.Name)">+ Добавить</button>
+                    </div>
+                </div>
+            </EditForm>
+        </div>
+
+        <div class="section-card">
+            <h2>Картинки и скриншоты</h2>
+            @if (character.Attachments.Count > 0)
+            {
+                <div class="row g-3 mb-3">
+                    @foreach (var att in character.Attachments)
+                    {
+                        <div class="col-md-3">
+                            <img class="attachment-thumb mb-1" src="@($"/uploads/{att.StoredFileName}")" alt="@att.Caption" />
+                            <div class="small text-truncate">@att.Caption</div>
+                            <button class="btn btn-sm btn-outline-danger mt-1" @onclick="() => RemoveAttachment(att.Id)">Удалить</button>
+                        </div>
+                    }
+                </div>
+            }
+            <div class="row g-2 align-items-end">
+                <div class="col-md-5">
+                    <label class="form-label">Файл</label>
+                    <InputFile OnChange="OnAttachmentSelected" class="form-control" accept="image/*" />
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label">Подпись</label>
+                    <input class="form-control" @bind="newAttachmentCaption" />
+                </div>
             </div>
-            <div class="col-md-2">
-                <label class="form-label">Кол-во</label>
-                <InputNumber class="form-control" @bind-Value="newItem.Quantity" />
-            </div>
-            <div class="col-md-4">
-                <label class="form-label">Заметки</label>
-                <InputText class="form-control" @bind-Value="newItem.Notes" />
-            </div>
-            <div class="col-md-2">
-                <button type="submit" class="btn btn-success" disabled="@string.IsNullOrWhiteSpace(newItem.Name)">+ Добавить</button>
-            </div>
-        </EditForm>
+        </div>
     }
 }
 
@@ -139,8 +294,10 @@ else
 
     private bool IsNew => Id == 0;
     private PlayerCharacter? character;
-    private NewItemModel newItem = new();
     private bool loaded;
+    private NewItemModel newItem = new();
+    private NewFeatureModel newFeature = new();
+    private string newAttachmentCaption = string.Empty;
 
     protected override async Task OnInitializedAsync()
     {
@@ -149,6 +306,8 @@ else
             : await CharacterService.GetByIdAsync(Id);
         loaded = true;
     }
+
+    private async Task Reload() => character = await CharacterService.GetByIdAsync(Id);
 
     private async Task Save()
     {
@@ -173,21 +332,84 @@ else
 
     private async Task AddItem()
     {
-        await CharacterService.AddInventoryItemAsync(Id, newItem.Name, newItem.Quantity, newItem.Notes);
+        await CharacterService.AddInventoryItemAsync(Id, newItem.Name, newItem.Quantity, newItem.Notes, newItem.Category);
         newItem = new();
-        character = await CharacterService.GetByIdAsync(Id);
+        await Reload();
     }
 
     private async Task RemoveItem(int itemId)
     {
         await CharacterService.RemoveInventoryItemAsync(itemId);
-        character = await CharacterService.GetByIdAsync(Id);
+        await Reload();
     }
+
+    private async Task AddFeature()
+    {
+        await CharacterService.AddFeatureAsync(Id, newFeature.Name, newFeature.Type, newFeature.Level, newFeature.Description);
+        newFeature = new();
+        await Reload();
+    }
+
+    private async Task RemoveFeature(int featureId)
+    {
+        await CharacterService.RemoveFeatureAsync(featureId);
+        await Reload();
+    }
+
+    private async Task OnPortraitSelected(InputFileChangeEventArgs e)
+    {
+        await using var stream = e.File.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024);
+        await CharacterService.SetPortraitAsync(Id, stream, e.File.Name);
+        await Reload();
+    }
+
+    private async Task OnAttachmentSelected(InputFileChangeEventArgs e)
+    {
+        await using var stream = e.File.OpenReadStream(maxAllowedSize: 15 * 1024 * 1024);
+        await CharacterService.AddAttachmentAsync(Id, stream, e.File.Name, e.File.ContentType, newAttachmentCaption);
+        newAttachmentCaption = string.Empty;
+        await Reload();
+    }
+
+    private async Task RemoveAttachment(int attachmentId)
+    {
+        await CharacterService.RemoveAttachmentAsync(attachmentId);
+        await Reload();
+    }
+
+    private static string Initials(string name)
+    {
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length switch
+        {
+            0 => "?",
+            1 => parts[0][..1].ToUpperInvariant(),
+            _ => $"{parts[0][0]}{parts[^1][0]}".ToUpperInvariant()
+        };
+    }
+
+    private static string CategoryLabel(InventoryItemCategory category) => category switch
+    {
+        InventoryItemCategory.Equipment => "Снаряжение",
+        InventoryItemCategory.Consumable => "Расходники",
+        InventoryItemCategory.Treasure => "Ценности",
+        InventoryItemCategory.Misc => "Прочее",
+        _ => category.ToString()
+    };
 
     private class NewItemModel
     {
         public string Name { get; set; } = string.Empty;
         public int Quantity { get; set; } = 1;
         public string Notes { get; set; } = string.Empty;
+        public InventoryItemCategory Category { get; set; } = InventoryItemCategory.Equipment;
+    }
+
+    private class NewFeatureModel
+    {
+        public string Name { get; set; } = string.Empty;
+        public CharacterFeatureType Type { get; set; } = CharacterFeatureType.Ability;
+        public int? Level { get; set; }
+        public string Description { get; set; } = string.Empty;
     }
 }

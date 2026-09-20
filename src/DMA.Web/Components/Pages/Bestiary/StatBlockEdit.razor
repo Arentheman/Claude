@@ -17,85 +17,92 @@ else
     <a href="/bestiary">&larr; К бестиарию</a>
     <h1>@(IsNew ? "Новый монстр/NPC" : statBlock.Name)</h1>
 
-    <EditForm Model="statBlock" OnValidSubmit="Save" FormName="edit-statblock">
-        <div class="row mb-3">
-            <div class="col-md-4">
-                <label class="form-label">Имя</label>
-                <InputText class="form-control" @bind-Value="statBlock.Name" />
+    <div class="section-card">
+        <EditForm Model="statBlock" OnValidSubmit="Save" FormName="edit-statblock">
+            <div class="row mb-3">
+                <div class="col-md-4">
+                    <label class="form-label">Имя</label>
+                    <InputText class="form-control" @bind-Value="statBlock.Name" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Тип</label>
+                    <InputSelect class="form-select" @bind-Value="statBlock.Type">
+                        @foreach (var t in Enum.GetValues<StatBlockType>())
+                        {
+                            <option value="@t">@t</option>
+                        }
+                    </InputSelect>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Challenge Rating</label>
+                    <InputText class="form-control" @bind-Value="statBlock.ChallengeRating" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Источник</label>
+                    <InputText class="form-control" @bind-Value="statBlock.Source" />
+                </div>
             </div>
-            <div class="col-md-2">
-                <label class="form-label">Тип</label>
-                <InputSelect class="form-select" @bind-Value="statBlock.Type">
-                    @foreach (var t in Enum.GetValues<StatBlockType>())
-                    {
-                        <option value="@t">@t</option>
-                    }
-                </InputSelect>
-            </div>
-            <div class="col-md-2">
-                <label class="form-label">Challenge Rating</label>
-                <InputText class="form-control" @bind-Value="statBlock.ChallengeRating" />
-            </div>
-            <div class="col-md-4">
-                <label class="form-label">Источник</label>
-                <InputText class="form-control" @bind-Value="statBlock.Source" />
-            </div>
-        </div>
 
-        <div class="row mb-3">
-            <div class="col-md-3">
-                <label class="form-label">HP</label>
-                <InputNumber class="form-control" @bind-Value="statBlock.MaxHp" />
+            <div class="row mb-3">
+                <div class="col-md-3">
+                    <label class="form-label">HP</label>
+                    <InputNumber class="form-control" @bind-Value="statBlock.MaxHp" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">AC</label>
+                    <InputNumber class="form-control" @bind-Value="statBlock.ArmorClass" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Скорость</label>
+                    <InputText class="form-control" @bind-Value="statBlock.Speed" />
+                </div>
             </div>
-            <div class="col-md-3">
-                <label class="form-label">AC</label>
-                <InputNumber class="form-control" @bind-Value="statBlock.ArmorClass" />
-            </div>
-            <div class="col-md-3">
-                <label class="form-label">Скорость</label>
-                <InputText class="form-control" @bind-Value="statBlock.Speed" />
-            </div>
-        </div>
 
-        <h5>Характеристики</h5>
-        <div class="row mb-3">
-            <div class="col">
-                <label class="form-label">Сила</label>
-                <InputNumber class="form-control" @bind-Value="statBlock.Abilities.Strength" />
-            </div>
-            <div class="col">
-                <label class="form-label">Ловкость</label>
-                <InputNumber class="form-control" @bind-Value="statBlock.Abilities.Dexterity" />
-            </div>
-            <div class="col">
-                <label class="form-label">Телосложение</label>
-                <InputNumber class="form-control" @bind-Value="statBlock.Abilities.Constitution" />
-            </div>
-            <div class="col">
-                <label class="form-label">Интеллект</label>
-                <InputNumber class="form-control" @bind-Value="statBlock.Abilities.Intelligence" />
-            </div>
-            <div class="col">
-                <label class="form-label">Мудрость</label>
-                <InputNumber class="form-control" @bind-Value="statBlock.Abilities.Wisdom" />
-            </div>
-            <div class="col">
-                <label class="form-label">Харизма</label>
-                <InputNumber class="form-control" @bind-Value="statBlock.Abilities.Charisma" />
-            </div>
-        </div>
+            <hr />
 
-        <div class="mb-3">
-            <label class="form-label">Описание / способности</label>
-            <InputTextArea class="form-control" @bind-Value="statBlock.Description" rows="4" />
-        </div>
+            <div class="row mb-3">
+                <div class="col-md-3">
+                    <h5>Характеристики</h5>
+                    <div class="ability-stack">
+                        <div class="ability-box">
+                            <span class="ability-label">Сила</span>
+                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="statBlock.Abilities.Strength" />
+                        </div>
+                        <div class="ability-box">
+                            <span class="ability-label">Ловкость</span>
+                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="statBlock.Abilities.Dexterity" />
+                        </div>
+                        <div class="ability-box">
+                            <span class="ability-label">Телосложение</span>
+                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="statBlock.Abilities.Constitution" />
+                        </div>
+                        <div class="ability-box">
+                            <span class="ability-label">Интеллект</span>
+                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="statBlock.Abilities.Intelligence" />
+                        </div>
+                        <div class="ability-box">
+                            <span class="ability-label">Мудрость</span>
+                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="statBlock.Abilities.Wisdom" />
+                        </div>
+                        <div class="ability-box">
+                            <span class="ability-label">Харизма</span>
+                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="statBlock.Abilities.Charisma" />
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-9">
+                    <h5>Описание / способности</h5>
+                    <InputTextArea class="form-control h-100" @bind-Value="statBlock.Description" rows="10" />
+                </div>
+            </div>
 
-        <button type="submit" class="btn btn-primary">Сохранить</button>
-        @if (!IsNew)
-        {
-            <button type="button" class="btn btn-outline-danger" @onclick="Delete">Удалить</button>
-        }
-    </EditForm>
+            <button type="submit" class="btn btn-primary">Сохранить</button>
+            @if (!IsNew)
+            {
+                <button type="button" class="btn btn-outline-danger" @onclick="Delete">Удалить</button>
+            }
+        </EditForm>
+    </div>
 }
 
 @code {

@@ -11,6 +11,7 @@ public class PlayerCharacterConfiguration : IEntityTypeConfiguration<PlayerChara
         builder.Property(c => c.Name).IsRequired().HasMaxLength(200);
         builder.Property(c => c.PlayerName).HasMaxLength(200);
         builder.Property(c => c.Notes).HasMaxLength(4000);
+        builder.Property(c => c.PortraitPath).HasMaxLength(260);
 
         builder.OwnsOne(c => c.Abilities, ab =>
         {
@@ -22,9 +23,28 @@ public class PlayerCharacterConfiguration : IEntityTypeConfiguration<PlayerChara
             ab.Property(a => a.Charisma).HasColumnName("Cha");
         });
 
+        builder.OwnsOne(c => c.Currency, cur =>
+        {
+            cur.Property(c => c.CopperPieces).HasColumnName("CopperPieces");
+            cur.Property(c => c.SilverPieces).HasColumnName("SilverPieces");
+            cur.Property(c => c.ElectrumPieces).HasColumnName("ElectrumPieces");
+            cur.Property(c => c.GoldPieces).HasColumnName("GoldPieces");
+            cur.Property(c => c.PlatinumPieces).HasColumnName("PlatinumPieces");
+        });
+
         builder.HasMany(c => c.Inventory)
             .WithOne(i => i.PlayerCharacter)
             .HasForeignKey(i => i.PlayerCharacterId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(c => c.Features)
+            .WithOne(f => f.PlayerCharacter)
+            .HasForeignKey(f => f.PlayerCharacterId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(c => c.Attachments)
+            .WithOne(a => a.PlayerCharacter)
+            .HasForeignKey(a => a.PlayerCharacterId)
             .OnDelete(DeleteBehavior.Cascade);
     }
 }

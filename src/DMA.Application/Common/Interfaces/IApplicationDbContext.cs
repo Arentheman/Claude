@@ -13,6 +13,8 @@ public interface IApplicationDbContext
     DbSet<Session> Sessions { get; }
     DbSet<PlayerCharacter> PlayerCharacters { get; }
     DbSet<InventoryItem> InventoryItems { get; }
+    DbSet<CharacterFeature> CharacterFeatures { get; }
+    DbSet<CharacterAttachment> CharacterAttachments { get; }
     DbSet<StatBlock> StatBlocks { get; }
     DbSet<Encounter> Encounters { get; }
     DbSet<EncounterParticipant> EncounterParticipants { get; }

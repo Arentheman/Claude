@@ -1,5 +1,6 @@
 using DMA.Application.Common.Interfaces;
 using DMA.Infrastructure.Data;
+using DMA.Infrastructure.Files;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,6 +34,9 @@ public static class DependencyInjection
         });
 
         services.AddScoped<IApplicationDbContext>(sp => sp.GetRequiredService<AppDbContext>());
+
+        services.AddSingleton<FileStorageService>();
+        services.AddSingleton<IFileStorageService>(sp => sp.GetRequiredService<FileStorageService>());
 
         return services;
     }
