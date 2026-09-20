@@ -8,6 +8,7 @@ services:
     environment:
       Database__Provider: Postgres
       ConnectionStrings__Default: "Host=db;Database=dungeonmaster;Username=dma;Password=${DB_PASSWORD:?set DB_PASSWORD}"
+      App__OpenBrowserOnStart: "false"
     depends_on:
       - db
 

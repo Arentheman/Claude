@@ -1,8 +1,11 @@
+using System.Diagnostics;
 using DMA.Application;
 using DMA.Infrastructure;
 using DMA.Infrastructure.Data;
 using DMA.Infrastructure.Data.Seed;
 using DMA.Web.Components;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -36,5 +39,27 @@ app.UseAntiforgery();
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
+
+if (app.Configuration.GetValue("App:OpenBrowserOnStart", true))
+{
+    app.Lifetime.ApplicationStarted.Register(() =>
+    {
+        var address = app.Services.GetRequiredService<IServer>()
+            .Features.Get<IServerAddressesFeature>()?
+            .Addresses.FirstOrDefault();
+
+        if (address is null) return;
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(address) { UseShellExecute = true });
+        }
+        catch
+        {
+            // Best-effort convenience for the packaged desktop-style build; ignore if it fails
+            // (e.g. no default browser registered) — the console still prints the address.
+        }
+    });
+}
 
 app.Run();
