@@ -64,6 +64,14 @@ public class PlayerCharacterService(IApplicationDbContext db, IFileStorageServic
         await db.SaveChangesAsync(ct);
     }
 
+    public async Task UpdateInventoryItemQuantityAsync(int itemId, int quantity, CancellationToken ct = default)
+    {
+        var item = await db.InventoryItems.FindAsync([itemId], ct);
+        if (item is null) return;
+        item.Quantity = quantity;
+        await db.SaveChangesAsync(ct);
+    }
+
     public async Task RemoveInventoryItemAsync(int itemId, CancellationToken ct = default)
     {
         var item = await db.InventoryItems.FindAsync([itemId], ct);

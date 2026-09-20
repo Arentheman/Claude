@@ -220,7 +220,10 @@ else
                             {
                                 <tr>
                                     <td>@item.Name</td>
-                                    <td>@item.Quantity</td>
+                                    <td style="width:100px">
+                                        <input type="number" class="form-control form-control-sm" value="@item.Quantity"
+                                               @onchange="@(e => UpdateItemQuantity(item, e.Value))" />
+                                    </td>
                                     <td>@item.Notes</td>
                                     <td><button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveItem(item.Id)">Удалить</button></td>
                                 </tr>
@@ -341,6 +344,15 @@ else
     {
         await CharacterService.RemoveInventoryItemAsync(itemId);
         await Reload();
+    }
+
+    private async Task UpdateItemQuantity(InventoryItem item, object? value)
+    {
+        if (int.TryParse(value?.ToString(), out var qty))
+        {
+            await CharacterService.UpdateInventoryItemQuantityAsync(item.Id, qty);
+            await Reload();
+        }
     }
 
     private async Task AddFeature()
