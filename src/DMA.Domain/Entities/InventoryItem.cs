@@ -1,0 +1,12 @@
+namespace DMA.Domain.Entities;
+
+public class InventoryItem
+{
+    public int Id { get; set; }
+    public int PlayerCharacterId { get; set; }
+    public PlayerCharacter PlayerCharacter { get; set; } = null!;
+
+    public string Name { get; set; } = string.Empty;
+    public int Quantity { get; set; } = 1;
+    public string Notes { get; set; } = string.Empty;
+}

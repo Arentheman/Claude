@@ -1,0 +1,21 @@
+using DMA.Domain.Entities;
+using Microsoft.EntityFrameworkCore;
+
+namespace DMA.Application.Common.Interfaces;
+
+/// <summary>
+/// Abstraction over persistence used by the Application layer, so it never depends on a
+/// concrete EF Core provider (SQLite locally, PostgreSQL when deployed).
+/// </summary>
+public interface IApplicationDbContext
+{
+    DbSet<Campaign> Campaigns { get; }
+    DbSet<Session> Sessions { get; }
+    DbSet<PlayerCharacter> PlayerCharacters { get; }
+    DbSet<InventoryItem> InventoryItems { get; }
+    DbSet<StatBlock> StatBlocks { get; }
+    DbSet<Encounter> Encounters { get; }
+    DbSet<EncounterParticipant> EncounterParticipants { get; }
+
+    Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+}

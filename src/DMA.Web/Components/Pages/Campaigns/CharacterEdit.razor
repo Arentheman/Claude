@@ -1,0 +1,193 @@
+@page "/campaigns/{CampaignId:int}/characters/{Id:int}"
+@rendermode InteractiveServer
+@using DMA.Application.Characters
+@using DMA.Domain.Entities
+@inject PlayerCharacterService CharacterService
+@inject NavigationManager Nav
+
+<PageTitle>@(character?.Name ?? "Новый персонаж")</PageTitle>
+
+@if (character is null)
+{
+    <p><em>@(loaded ? "Персонаж не найден." : "Загрузка...")</em></p>
+}
+else
+{
+    <a href="@($"/campaigns/{CampaignId}")">&larr; К кампании</a>
+    <h1>@(IsNew ? "Новый персонаж" : character.Name)</h1>
+
+    <EditForm Model="character" OnValidSubmit="Save" FormName="edit-character">
+        <div class="row mb-3">
+            <div class="col-md-4">
+                <label class="form-label">Имя персонажа</label>
+                <InputText class="form-control" @bind-Value="character.Name" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Игрок</label>
+                <InputText class="form-control" @bind-Value="character.PlayerName" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Раса</label>
+                <InputText class="form-control" @bind-Value="character.Race" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Класс</label>
+                <InputText class="form-control" @bind-Value="character.Class" />
+            </div>
+        </div>
+
+        <div class="row mb-3">
+            <div class="col-md-2">
+                <label class="form-label">Уровень</label>
+                <InputNumber class="form-control" @bind-Value="character.Level" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">HP текущее</label>
+                <InputNumber class="form-control" @bind-Value="character.CurrentHp" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">HP максимум</label>
+                <InputNumber class="form-control" @bind-Value="character.MaxHp" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">AC</label>
+                <InputNumber class="form-control" @bind-Value="character.ArmorClass" />
+            </div>
+        </div>
+
+        <h5>Характеристики</h5>
+        <div class="row mb-3">
+            <div class="col">
+                <label class="form-label">Сила</label>
+                <InputNumber class="form-control" @bind-Value="character.Abilities.Strength" />
+            </div>
+            <div class="col">
+                <label class="form-label">Ловкость</label>
+                <InputNumber class="form-control" @bind-Value="character.Abilities.Dexterity" />
+            </div>
+            <div class="col">
+                <label class="form-label">Телосложение</label>
+                <InputNumber class="form-control" @bind-Value="character.Abilities.Constitution" />
+            </div>
+            <div class="col">
+                <label class="form-label">Интеллект</label>
+                <InputNumber class="form-control" @bind-Value="character.Abilities.Intelligence" />
+            </div>
+            <div class="col">
+                <label class="form-label">Мудрость</label>
+                <InputNumber class="form-control" @bind-Value="character.Abilities.Wisdom" />
+            </div>
+            <div class="col">
+                <label class="form-label">Харизма</label>
+                <InputNumber class="form-control" @bind-Value="character.Abilities.Charisma" />
+            </div>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Заметки</label>
+            <InputTextArea class="form-control" @bind-Value="character.Notes" rows="3" />
+        </div>
+
+        <button type="submit" class="btn btn-primary">Сохранить</button>
+        @if (!IsNew)
+        {
+            <button type="button" class="btn btn-outline-danger" @onclick="Delete">Удалить персонажа</button>
+        }
+    </EditForm>
+
+    @if (!IsNew)
+    {
+        <hr />
+        <h5>Инвентарь</h5>
+        <table class="table table-sm">
+            <thead><tr><th>Предмет</th><th>Кол-во</th><th>Заметки</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var item in character.Inventory)
+                {
+                    <tr>
+                        <td>@item.Name</td>
+                        <td>@item.Quantity</td>
+                        <td>@item.Notes</td>
+                        <td><button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveItem(item.Id)">Удалить</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <EditForm Model="newItem" OnValidSubmit="AddItem" FormName="add-item" class="row g-2 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label">Название</label>
+                <InputText class="form-control" @bind-Value="newItem.Name" />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Кол-во</label>
+                <InputNumber class="form-control" @bind-Value="newItem.Quantity" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Заметки</label>
+                <InputText class="form-control" @bind-Value="newItem.Notes" />
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-success" disabled="@string.IsNullOrWhiteSpace(newItem.Name)">+ Добавить</button>
+            </div>
+        </EditForm>
+    }
+}
+
+@code {
+    [Parameter] public int CampaignId { get; set; }
+    [Parameter] public int Id { get; set; }
+
+    private bool IsNew => Id == 0;
+    private PlayerCharacter? character;
+    private NewItemModel newItem = new();
+    private bool loaded;
+
+    protected override async Task OnInitializedAsync()
+    {
+        character = IsNew
+            ? new PlayerCharacter { CampaignId = CampaignId }
+            : await CharacterService.GetByIdAsync(Id);
+        loaded = true;
+    }
+
+    private async Task Save()
+    {
+        if (character is null) return;
+
+        if (IsNew)
+        {
+            var created = await CharacterService.CreateAsync(character);
+            Nav.NavigateTo($"/campaigns/{CampaignId}/characters/{created.Id}");
+        }
+        else
+        {
+            await CharacterService.UpdateAsync(character);
+        }
+    }
+
+    private async Task Delete()
+    {
+        await CharacterService.DeleteAsync(Id);
+        Nav.NavigateTo($"/campaigns/{CampaignId}");
+    }
+
+    private async Task AddItem()
+    {
+        await CharacterService.AddInventoryItemAsync(Id, newItem.Name, newItem.Quantity, newItem.Notes);
+        newItem = new();
+        character = await CharacterService.GetByIdAsync(Id);
+    }
+
+    private async Task RemoveItem(int itemId)
+    {
+        await CharacterService.RemoveInventoryItemAsync(itemId);
+        character = await CharacterService.GetByIdAsync(Id);
+    }
+
+    private class NewItemModel
+    {
+        public string Name { get; set; } = string.Empty;
+        public int Quantity { get; set; } = 1;
+        public string Notes { get; set; } = string.Empty;
+    }
+}

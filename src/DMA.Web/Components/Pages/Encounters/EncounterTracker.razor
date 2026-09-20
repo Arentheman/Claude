@@ -1,0 +1,284 @@
+@page "/campaigns/{CampaignId:int}/encounters/{Id:int}"
+@rendermode InteractiveServer
+@using DMA.Application.Bestiary
+@using DMA.Application.Characters
+@using DMA.Application.Encounters
+@using DMA.Domain.Entities
+@using DMA.Domain.Enums
+@inject EncounterService EncounterService
+@inject PlayerCharacterService CharacterService
+@inject StatBlockService StatBlockService
+
+<PageTitle>@(encounter?.Name ?? "Столкновение")</PageTitle>
+
+@if (encounter is null)
+{
+    <p><em>@(loaded ? "Столкновение не найдено." : "Загрузка...")</em></p>
+}
+else
+{
+    <a href="@($"/campaigns/{CampaignId}")">&larr; К кампании</a>
+    <h1>@encounter.Name</h1>
+
+    <div class="d-flex align-items-center gap-3 mb-3">
+        <span class="badge bg-@StatusBadge(encounter.Status) fs-6">@encounter.Status</span>
+        @if (encounter.Status == EncounterStatus.Active)
+        {
+            <span>Раунд: <strong>@encounter.CurrentRound</strong></span>
+        }
+
+        @if (encounter.Status == EncounterStatus.Planned)
+        {
+            <button class="btn btn-danger btn-sm" @onclick="Start" disabled="@(encounter.Participants.Count == 0)">Начать бой</button>
+        }
+        @if (encounter.Status == EncounterStatus.Active)
+        {
+            <button class="btn btn-primary btn-sm" @onclick="NextTurn">Следующий ход &rarr;</button>
+            <button class="btn btn-outline-secondary btn-sm" @onclick="Complete">Завершить бой</button>
+        }
+    </div>
+
+    <table class="table table-sm align-middle">
+        <thead>
+            <tr>
+                <th></th>
+                <th>Имя</th>
+                <th>Иниц.</th>
+                <th>HP</th>
+                <th>AC</th>
+                <th>Состояния</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var p in OrderedParticipants())
+            {
+                var isCurrentTurn = encounter.Status == EncounterStatus.Active
+                    && encounter.Participants.OrderBy(x => x.SortOrder).ToList().ElementAtOrDefault(encounter.CurrentTurnIndex)?.Id == p.Id;
+
+                <tr class="@(isCurrentTurn ? "table-warning" : "") @(!p.IsActive ? "text-muted" : "")">
+                    <td>@(isCurrentTurn ? "▶" : "")</td>
+                    <td>
+                        @p.Name
+                        <span class="badge bg-light text-dark">@p.SourceType</span>
+                    </td>
+                    <td style="width:80px">
+                        <input type="number" class="form-control form-control-sm" value="@p.Initiative"
+                               @onchange="@(e => UpdateInitiative(p, e.Value))" disabled="@(encounter.Status != EncounterStatus.Planned)" />
+                    </td>
+                    <td style="width:140px">
+                        <div class="input-group input-group-sm">
+                            <input type="number" class="form-control" value="@p.CurrentHp"
+                                   @onchange="@(e => UpdateHp(p, e.Value))" />
+                            <span class="input-group-text">/ @p.MaxHp</span>
+                        </div>
+                    </td>
+                    <td>@p.ArmorClass</td>
+                    <td>
+                        @foreach (var c in p.Conditions)
+                        {
+                            <span class="badge bg-info text-dark me-1" role="button" @onclick="() => ToggleCondition(p, c)">@c &times;</span>
+                        }
+                        <select class="form-select form-select-sm d-inline-block w-auto" @onchange="@(e => AddCondition(p, e.Value?.ToString()))">
+                            <option value="">+ состояние</option>
+                            @foreach (var c in CommonConditions.Where(c => !p.Conditions.Contains(c)))
+                            {
+                                <option value="@c">@c</option>
+                            }
+                        </select>
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => ToggleActive(p)">@(p.IsActive ? "Убрать из боя" : "Вернуть")</button>
+                        <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveParticipant(p.Id)">Удалить</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    @if (encounter.Status == EncounterStatus.Planned)
+    {
+        <hr />
+        <h5>Добавить участника</h5>
+
+        <div class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label">Персонаж игрока</label>
+                <div class="input-group">
+                    <select class="form-select" @bind="selectedCharacterId">
+                        <option value="0">-- выбрать --</option>
+                        @foreach (var c in characters)
+                        {
+                            <option value="@c.Id">@c.Name</option>
+                        }
+                    </select>
+                    <input type="number" class="form-control" style="max-width:90px" placeholder="Иниц." @bind="characterInitiative" />
+                    <button class="btn btn-success" @onclick="AddCharacter" disabled="@(selectedCharacterId == 0)">+</button>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <label class="form-label">Из бестиария</label>
+                <div class="input-group">
+                    <select class="form-select" @bind="selectedStatBlockId">
+                        <option value="0">-- выбрать --</option>
+                        @foreach (var s in statBlocks)
+                        {
+                            <option value="@s.Id">@s.Name (@s.Type)</option>
+                        }
+                    </select>
+                    <input type="number" class="form-control" style="max-width:90px" placeholder="Иниц." @bind="statBlockInitiative" />
+                    <button class="btn btn-success" @onclick="AddStatBlock" disabled="@(selectedStatBlockId == 0)">+</button>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <label class="form-label">Произвольный участник</label>
+                <div class="input-group">
+                    <input class="form-control" placeholder="Имя" @bind="customName" />
+                    <input type="number" class="form-control" style="max-width:70px" placeholder="Иниц." @bind="customInitiative" />
+                    <input type="number" class="form-control" style="max-width:70px" placeholder="HP" @bind="customHp" />
+                    <input type="number" class="form-control" style="max-width:70px" placeholder="AC" @bind="customAc" />
+                    <button class="btn btn-success" @onclick="AddCustom" disabled="@string.IsNullOrWhiteSpace(customName)">+</button>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public int CampaignId { get; set; }
+    [Parameter] public int Id { get; set; }
+
+    private static readonly string[] CommonConditions =
+        ["Blinded", "Charmed", "Deafened", "Frightened", "Grappled", "Incapacitated", "Invisible",
+         "Paralyzed", "Petrified", "Poisoned", "Prone", "Restrained", "Stunned", "Unconscious"];
+
+    private Encounter? encounter;
+    private List<PlayerCharacter> characters = [];
+    private List<StatBlock> statBlocks = [];
+    private bool loaded;
+
+    private int selectedCharacterId;
+    private int characterInitiative = 10;
+    private int selectedStatBlockId;
+    private int statBlockInitiative = 10;
+    private string customName = string.Empty;
+    private int customInitiative = 10;
+    private int customHp = 10;
+    private int customAc = 10;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+        characters = await CharacterService.GetByCampaignAsync(CampaignId);
+        statBlocks = await StatBlockService.GetAllAsync();
+    }
+
+    private async Task Load()
+    {
+        encounter = await EncounterService.GetByIdAsync(Id);
+        loaded = true;
+    }
+
+    private IEnumerable<EncounterParticipant> OrderedParticipants() =>
+        encounter!.Status == EncounterStatus.Planned
+            ? encounter.Participants.OrderByDescending(p => p.Initiative)
+            : encounter.Participants.OrderBy(p => p.SortOrder);
+
+    private async Task Start()
+    {
+        await EncounterService.StartAsync(Id);
+        await Load();
+    }
+
+    private async Task NextTurn()
+    {
+        await EncounterService.NextTurnAsync(Id);
+        await Load();
+    }
+
+    private async Task Complete()
+    {
+        await EncounterService.CompleteAsync(Id);
+        await Load();
+    }
+
+    private async Task UpdateHp(EncounterParticipant p, object? value)
+    {
+        if (int.TryParse(value?.ToString(), out var hp))
+        {
+            await EncounterService.UpdateHpAsync(p.Id, hp);
+            await Load();
+        }
+    }
+
+    private async Task UpdateInitiative(EncounterParticipant p, object? value)
+    {
+        if (int.TryParse(value?.ToString(), out var init))
+        {
+            await EncounterService.UpdateInitiativeAsync(p.Id, init);
+            await Load();
+        }
+    }
+
+    private async Task ToggleCondition(EncounterParticipant p, string condition)
+    {
+        await EncounterService.ToggleConditionAsync(p.Id, condition);
+        await Load();
+    }
+
+    private async Task AddCondition(EncounterParticipant p, string? condition)
+    {
+        if (!string.IsNullOrWhiteSpace(condition))
+        {
+            await EncounterService.ToggleConditionAsync(p.Id, condition);
+            await Load();
+        }
+    }
+
+    private async Task ToggleActive(EncounterParticipant p)
+    {
+        await EncounterService.SetActiveAsync(p.Id, !p.IsActive);
+        await Load();
+    }
+
+    private async Task RemoveParticipant(int participantId)
+    {
+        await EncounterService.RemoveParticipantAsync(participantId);
+        await Load();
+    }
+
+    private async Task AddCharacter()
+    {
+        var character = characters.FirstOrDefault(c => c.Id == selectedCharacterId);
+        if (character is null) return;
+        await EncounterService.AddFromPlayerCharacterAsync(Id, character, characterInitiative);
+        selectedCharacterId = 0;
+        await Load();
+    }
+
+    private async Task AddStatBlock()
+    {
+        var statBlock = statBlocks.FirstOrDefault(s => s.Id == selectedStatBlockId);
+        if (statBlock is null) return;
+        await EncounterService.AddFromStatBlockAsync(Id, statBlock, statBlockInitiative);
+        selectedStatBlockId = 0;
+        await Load();
+    }
+
+    private async Task AddCustom()
+    {
+        await EncounterService.AddCustomAsync(Id, customName, customInitiative, customHp, customAc);
+        customName = string.Empty;
+        await Load();
+    }
+
+    private static string StatusBadge(EncounterStatus status) => status switch
+    {
+        EncounterStatus.Planned => "secondary",
+        EncounterStatus.Active => "danger",
+        EncounterStatus.Completed => "success",
+        _ => "light"
+    };
+}

@@ -1,0 +1,92 @@
+@page "/"
+@rendermode InteractiveServer
+@using DMA.Application.Campaigns
+@using DMA.Domain.Entities
+@using DMA.Domain.Enums
+@inject CampaignService CampaignService
+@inject NavigationManager Nav
+
+<PageTitle>Кампании</PageTitle>
+
+<h1>Кампании</h1>
+
+@if (campaigns is null)
+{
+    <p><em>Загрузка...</em></p>
+}
+else
+{
+    @if (campaigns.Count == 0)
+    {
+        <p class="text-muted">Пока нет ни одной кампании. Создайте первую ниже.</p>
+    }
+    else
+    {
+        <div class="row g-3 mb-4">
+            @foreach (var campaign in campaigns)
+            {
+                <div class="col-md-4">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h5 class="card-title">@campaign.Name</h5>
+                            <span class="badge bg-@StatusBadge(campaign.Status) mb-2">@campaign.Status</span>
+                            <p class="card-text text-truncate">@campaign.Description</p>
+                            <a class="btn btn-primary btn-sm" href="@($"/campaigns/{campaign.Id}")">Открыть</a>
+                            <button class="btn btn-outline-danger btn-sm" @onclick="() => DeleteCampaign(campaign.Id)">Удалить</button>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+}
+
+<h2>Новая кампания</h2>
+<EditForm Model="newCampaign" OnValidSubmit="CreateCampaign" FormName="new-campaign">
+    <div class="mb-2">
+        <label class="form-label">Название</label>
+        <InputText class="form-control" @bind-Value="newCampaign.Name" />
+    </div>
+    <div class="mb-2">
+        <label class="form-label">Описание</label>
+        <InputTextArea class="form-control" @bind-Value="newCampaign.Description" rows="3" />
+    </div>
+    <button type="submit" class="btn btn-success" disabled="@string.IsNullOrWhiteSpace(newCampaign.Name)">Создать</button>
+</EditForm>
+
+@code {
+    private List<Campaign>? campaigns;
+    private NewCampaignModel newCampaign = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        campaigns = await CampaignService.GetAllAsync();
+    }
+
+    private async Task CreateCampaign()
+    {
+        await CampaignService.CreateAsync(newCampaign.Name, newCampaign.Description);
+        newCampaign = new();
+        campaigns = await CampaignService.GetAllAsync();
+    }
+
+    private async Task DeleteCampaign(int id)
+    {
+        await CampaignService.DeleteAsync(id);
+        campaigns = await CampaignService.GetAllAsync();
+    }
+
+    private static string StatusBadge(CampaignStatus status) => status switch
+    {
+        CampaignStatus.Active => "success",
+        CampaignStatus.Paused => "warning",
+        CampaignStatus.Completed => "secondary",
+        _ => "light"
+    };
+
+    private class NewCampaignModel
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+    }
+}

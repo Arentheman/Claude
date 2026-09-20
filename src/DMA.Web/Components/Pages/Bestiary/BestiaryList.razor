@@ -1,0 +1,68 @@
+@page "/bestiary"
+@rendermode InteractiveServer
+@using DMA.Application.Bestiary
+@using DMA.Domain.Entities
+@using DMA.Domain.Enums
+@inject StatBlockService StatBlockService
+
+<PageTitle>Бестиарий</PageTitle>
+
+<h1>Бестиарий</h1>
+
+<div class="mb-3">
+    <div class="btn-group" role="group">
+        <button class="btn btn-outline-secondary @(filter is null ? "active" : "")" @onclick="() => SetFilter(null)">Все</button>
+        <button class="btn btn-outline-secondary @(filter == StatBlockType.Monster ? "active" : "")" @onclick="() => SetFilter(StatBlockType.Monster)">Монстры</button>
+        <button class="btn btn-outline-secondary @(filter == StatBlockType.Npc ? "active" : "")" @onclick="() => SetFilter(StatBlockType.Npc)">NPC</button>
+    </div>
+    <a class="btn btn-success ms-2" href="/bestiary/0">+ Новый</a>
+</div>
+
+@if (statBlocks is null)
+{
+    <p><em>Загрузка...</em></p>
+}
+else
+{
+    <table class="table table-sm">
+        <thead><tr><th>Имя</th><th>Тип</th><th>CR</th><th>HP</th><th>AC</th><th>Источник</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var sb in statBlocks)
+            {
+                <tr>
+                    <td>@sb.Name</td>
+                    <td>@sb.Type</td>
+                    <td>@sb.ChallengeRating</td>
+                    <td>@sb.MaxHp</td>
+                    <td>@sb.ArmorClass</td>
+                    <td>@sb.Source</td>
+                    <td>
+                        <a class="btn btn-sm btn-outline-primary" href="@($"/bestiary/{sb.Id}")">Открыть</a>
+                        <button class="btn btn-sm btn-outline-danger" @onclick="() => Delete(sb.Id)">Удалить</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<StatBlock>? statBlocks;
+    private StatBlockType? filter;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load() => statBlocks = await StatBlockService.GetAllAsync(filter);
+
+    private async Task SetFilter(StatBlockType? type)
+    {
+        filter = type;
+        await Load();
+    }
+
+    private async Task Delete(int id)
+    {
+        await StatBlockService.DeleteAsync(id);
+        await Load();
+    }
+}

@@ -1,0 +1,183 @@
+@page "/campaigns/{Id:int}"
+@rendermode InteractiveServer
+@using DMA.Application.Campaigns
+@using DMA.Application.Sessions
+@using DMA.Application.Characters
+@using DMA.Application.Encounters
+@using DMA.Domain.Entities
+@using DMA.Domain.Enums
+@inject CampaignService CampaignService
+@inject SessionService SessionService
+@inject PlayerCharacterService CharacterService
+@inject EncounterService EncounterService
+@inject NavigationManager Nav
+
+<PageTitle>@(campaign?.Name ?? "Кампания")</PageTitle>
+
+@if (campaign is null)
+{
+    <p><em>@(loaded ? "Кампания не найдена." : "Загрузка...")</em></p>
+}
+else
+{
+    <a href="/">&larr; К списку кампаний</a>
+    <h1>@campaign.Name</h1>
+
+    <EditForm Model="campaign" OnValidSubmit="SaveCampaign" FormName="edit-campaign">
+        <div class="row mb-3">
+            <div class="col-md-3">
+                <label class="form-label">Статус</label>
+                <InputSelect class="form-select" @bind-Value="campaign.Status">
+                    @foreach (var status in Enum.GetValues<CampaignStatus>())
+                    {
+                        <option value="@status">@status</option>
+                    }
+                </InputSelect>
+            </div>
+            <div class="col-md-9">
+                <label class="form-label">Описание</label>
+                <InputTextArea class="form-control" @bind-Value="campaign.Description" rows="2" />
+            </div>
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">Сохранить</button>
+    </EditForm>
+
+    <hr />
+
+    <div class="d-flex justify-content-between align-items-center">
+        <h2>Сессии</h2>
+    </div>
+    <table class="table table-sm">
+        <thead><tr><th>#</th><th>Название</th><th>Дата</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var session in sessions)
+            {
+                <tr>
+                    <td>@session.Number</td>
+                    <td>@session.Title</td>
+                    <td>@(session.PlayedOn?.ToString("d") ?? "-")</td>
+                    <td>
+                        <a class="btn btn-sm btn-outline-primary" href="@($"/campaigns/{Id}/sessions/{session.Id}")">Открыть</a>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    <EditForm Model="newSessionTitle" OnValidSubmit="CreateSession" FormName="new-session" class="d-flex gap-2 mb-4">
+        <InputText class="form-control" @bind-Value="newSessionTitle.Value" placeholder="Название новой сессии" />
+        <button type="submit" class="btn btn-success text-nowrap" disabled="@string.IsNullOrWhiteSpace(newSessionTitle.Value)">+ Сессия</button>
+    </EditForm>
+
+    <hr />
+
+    <h2>Персонажи игроков</h2>
+    <table class="table table-sm">
+        <thead><tr><th>Имя</th><th>Игрок</th><th>Класс</th><th>Ур.</th><th>HP</th><th>AC</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var pc in characters)
+            {
+                <tr>
+                    <td>@pc.Name</td>
+                    <td>@pc.PlayerName</td>
+                    <td>@pc.Race @pc.Class</td>
+                    <td>@pc.Level</td>
+                    <td>@pc.CurrentHp / @pc.MaxHp</td>
+                    <td>@pc.ArmorClass</td>
+                    <td>
+                        <a class="btn btn-sm btn-outline-primary" href="@($"/campaigns/{Id}/characters/{pc.Id}")">Открыть</a>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    <a class="btn btn-success mb-4" href="@($"/campaigns/{Id}/characters/0")">+ Персонаж</a>
+
+    <hr />
+
+    <h2>Столкновения</h2>
+    <table class="table table-sm">
+        <thead><tr><th>Название</th><th>Статус</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var enc in encounters)
+            {
+                <tr>
+                    <td>@enc.Name</td>
+                    <td><span class="badge bg-@EncounterBadge(enc.Status)">@enc.Status</span></td>
+                    <td>
+                        <a class="btn btn-sm btn-outline-primary" href="@($"/campaigns/{Id}/encounters/{enc.Id}")">Открыть</a>
+                        <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteEncounter(enc.Id)">Удалить</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    <EditForm Model="newEncounterName" OnValidSubmit="CreateEncounter" FormName="new-encounter" class="d-flex gap-2 mb-4">
+        <InputText class="form-control" @bind-Value="newEncounterName.Value" placeholder="Название нового столкновения" />
+        <button type="submit" class="btn btn-success text-nowrap" disabled="@string.IsNullOrWhiteSpace(newEncounterName.Value)">+ Столкновение</button>
+    </EditForm>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private Campaign? campaign;
+    private List<Session> sessions = [];
+    private List<PlayerCharacter> characters = [];
+    private List<Encounter> encounters = [];
+    private TextModel newSessionTitle = new();
+    private TextModel newEncounterName = new();
+    private bool loaded;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        campaign = await CampaignService.GetByIdAsync(Id);
+        if (campaign is null)
+        {
+            loaded = true;
+            return;
+        }
+        sessions = await SessionService.GetByCampaignAsync(Id);
+        characters = await CharacterService.GetByCampaignAsync(Id);
+        encounters = await EncounterService.GetByCampaignAsync(Id);
+        loaded = true;
+    }
+
+    private async Task SaveCampaign()
+    {
+        if (campaign is not null)
+            await CampaignService.UpdateAsync(campaign);
+    }
+
+    private async Task CreateSession()
+    {
+        var session = await SessionService.CreateAsync(Id, newSessionTitle.Value);
+        Nav.NavigateTo($"/campaigns/{Id}/sessions/{session.Id}");
+    }
+
+    private async Task CreateEncounter()
+    {
+        var encounter = await EncounterService.CreateAsync(Id, newEncounterName.Value, null);
+        Nav.NavigateTo($"/campaigns/{Id}/encounters/{encounter.Id}");
+    }
+
+    private async Task DeleteEncounter(int encounterId)
+    {
+        await EncounterService.DeleteAsync(encounterId);
+        encounters = await EncounterService.GetByCampaignAsync(Id);
+    }
+
+    private static string EncounterBadge(EncounterStatus status) => status switch
+    {
+        EncounterStatus.Planned => "secondary",
+        EncounterStatus.Active => "danger",
+        EncounterStatus.Completed => "success",
+        _ => "light"
+    };
+
+    private class TextModel
+    {
+        public string Value { get; set; } = string.Empty;
+    }
+}
