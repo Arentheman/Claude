@@ -42,7 +42,7 @@ public static class DependencyInjection
         services.AddHttpClient<ISrdReferenceService, Open5eReferenceService>(client =>
         {
             client.BaseAddress = new Uri("https://api.open5e.com/v1/");
-            client.Timeout = TimeSpan.FromSeconds(10);
+            client.Timeout = TimeSpan.FromSeconds(25);
         });
 
         return services;

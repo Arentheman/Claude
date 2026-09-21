@@ -34,7 +34,7 @@
     {
         <div class="alert alert-warning">
             @errorMessage
-            <button class="btn btn-sm btn-outline-secondary ms-2" @onclick="Search">Повторить</button>
+            <button class="btn btn-sm btn-outline-secondary ms-2" @onclick="() => Search()">Повторить</button>
         </div>
     }
     else if (activeTab == Tab.Spells)
@@ -117,11 +117,13 @@
 
     private void SwitchTab(Tab tab)
     {
+        debounceCts?.Cancel();
         activeTab = tab;
         query = "";
         spells = [];
         monsters = [];
         errorMessage = null;
+        isLoading = false;
         expandedIndex = -1;
     }
 
@@ -132,29 +134,31 @@
         query = e.Value?.ToString() ?? "";
         expandedIndex = -1;
 
+        // Cancel any earlier debounce-wait AND any HTTP call it already kicked off — otherwise a
+        // slow response to a stale, superseded query (e.g. "Arcane" while the user keeps typing
+        // "Arcane eye") can land after the current one and overwrite good results with an error.
         debounceCts?.Cancel();
         var cts = new CancellationTokenSource();
         debounceCts = cts;
 
-        _ = DebounceSearch(cts.Token);
+        _ = DebounceSearch(cts);
     }
 
-    private async Task DebounceSearch(CancellationToken token)
+    private async Task DebounceSearch(CancellationTokenSource cts)
     {
         try
         {
-            await Task.Delay(400, token);
+            await Task.Delay(400, cts.Token);
         }
-        catch (TaskCanceledException)
+        catch (OperationCanceledException)
         {
             return;
         }
 
-        if (!token.IsCancellationRequested)
-            await Search();
+        await Search(cts.Token);
     }
 
-    private async Task Search()
+    private async Task Search(CancellationToken token = default)
     {
         if (string.IsNullOrWhiteSpace(query))
         {
@@ -172,18 +176,34 @@
         try
         {
             if (activeTab == Tab.Spells)
-                spells = (await SrdService.SearchSpellsAsync(query)).ToList();
+            {
+                var result = await SrdService.SearchSpellsAsync(query, token);
+                if (token.IsCancellationRequested) return;
+                spells = result.ToList();
+            }
             else
-                monsters = (await SrdService.SearchMonstersAsync(query)).ToList();
+            {
+                var result = await SrdService.SearchMonstersAsync(query, token);
+                if (token.IsCancellationRequested) return;
+                monsters = result.ToList();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // A newer search superseded this one — nothing to show, nothing wrong either.
         }
         catch (Exception)
         {
-            errorMessage = "Не удалось загрузить справочник — проверьте подключение к интернету.";
+            if (!token.IsCancellationRequested)
+                errorMessage = "Не удалось загрузить справочник — проверьте подключение к интернету.";
         }
         finally
         {
-            isLoading = false;
-            StateHasChanged();
+            if (!token.IsCancellationRequested)
+            {
+                isLoading = false;
+                StateHasChanged();
+            }
         }
     }
 }

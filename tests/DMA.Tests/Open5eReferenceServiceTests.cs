@@ -102,6 +102,21 @@ public class Open5eReferenceServiceTests
             });
     }
 
+    /// <summary>Simulates a slow, stale response — like the earlier "Arcane" request that's still
+    /// in flight when the user finishes typing "Arcane eye" — to prove it can be aborted rather
+    /// than being allowed to land later and clobber the UI with a spurious connection error.</summary>
+    private class SlowStubHandler(string json, TimeSpan delay) : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            await Task.Delay(delay, ct);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json")
+            };
+        }
+    }
+
     private static HttpClient ClientReturning(string json) =>
         new(new StubHandler(json)) { BaseAddress = new Uri("https://api.open5e.com/v1/") };
 
@@ -146,5 +161,20 @@ public class Open5eReferenceServiceTests
         Assert.Equal("walk 30 ft.", goblin.Speed);
         Assert.Contains("Nimble Escape", goblin.Description);
         Assert.Contains("Scimitar", goblin.Description);
+    }
+
+    [Fact]
+    public async Task SearchSpellsAsync_AbortsInFlightRequestWhenCancelled()
+    {
+        var slowClient = new HttpClient(new SlowStubHandler(SpellsJson, TimeSpan.FromSeconds(5)))
+        {
+            BaseAddress = new Uri("https://api.open5e.com/v1/")
+        };
+        var service = new Open5eReferenceService(slowClient);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => service.SearchSpellsAsync("arcane", cts.Token));
     }
 }
