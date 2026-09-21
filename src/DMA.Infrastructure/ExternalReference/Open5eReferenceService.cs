@@ -19,7 +19,7 @@ public class Open5eReferenceService(HttpClient http) : ISrdReferenceService
 
         return response.Results.Select(s => new SrdSpellSummary(
             Name: s.Name,
-            Level: string.IsNullOrEmpty(s.Level) ? "Заговор" : s.Level,
+            Level: s.Level,
             School: s.School,
             CastingTime: s.CastingTime,
             Range: s.Range,
