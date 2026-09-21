@@ -1,0 +1,189 @@
+@page "/reference"
+@rendermode InteractiveServer
+@using DMA.Application.Common.Interfaces
+@using DMA.Application.Reference
+@inject ISrdReferenceService SrdService
+
+<PageTitle>Справочник SRD</PageTitle>
+
+<h1>Справочник SRD</h1>
+<p class="text-secondary">
+    Заклинания и монстры из открытого D&amp;D 5e SRD (лицензия OGL) — бесплатный источник
+    <a href="https://open5e.com" target="_blank" rel="noopener">open5e.com</a>. Это не текст официальных книг,
+    только легальный открытый контент. Нужно подключение к интернету.
+</p>
+
+<div class="section-card">
+    <ul class="nav nav-tabs mb-3">
+        <li class="nav-item">
+            <button class="nav-link @(activeTab == Tab.Spells ? "active" : "")" @onclick='() => SwitchTab(Tab.Spells)'>Заклинания</button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link @(activeTab == Tab.Monsters ? "active" : "")" @onclick='() => SwitchTab(Tab.Monsters)'>Монстры</button>
+        </li>
+    </ul>
+
+    <input class="form-control mb-3" placeholder="@(activeTab == Tab.Spells ? "Поиск заклинания, например 'fireball'" : "Поиск монстра, например 'goblin'")"
+           value="@query" @oninput="OnQueryChanged" />
+
+    @if (isLoading)
+    {
+        <p><em>Загрузка...</em></p>
+    }
+    else if (errorMessage is not null)
+    {
+        <div class="alert alert-warning">
+            @errorMessage
+            <button class="btn btn-sm btn-outline-secondary ms-2" @onclick="Search">Повторить</button>
+        </div>
+    }
+    else if (activeTab == Tab.Spells)
+    {
+        @if (spells.Count == 0 && !string.IsNullOrWhiteSpace(query))
+        {
+            <p class="text-secondary">Ничего не найдено.</p>
+        }
+        @for (var i = 0; i < spells.Count; i++)
+        {
+            var spell = spells[i];
+            var index = i;
+            <div class="card mb-2">
+                <div class="card-header d-flex justify-content-between align-items-center" role="button" @onclick="() => ToggleExpanded(index)">
+                    <div>
+                        <strong class="me-2">@spell.Name</strong>
+                        <span class="text-secondary small">@spell.Level · @spell.School</span>
+                    </div>
+                    <span>@(expandedIndex == index ? "▲" : "▼")</span>
+                </div>
+                @if (expandedIndex == index)
+                {
+                    <div class="card-body">
+                        <div class="small text-secondary mb-2">
+                            Время накладывания: @spell.CastingTime · Дистанция: @spell.Range · Компоненты: @spell.Components ·
+                            Длительность: @spell.Duration
+                            @if (spell.Concentration) { <span> · Концентрация</span> }
+                            @if (spell.Ritual) { <span> · Ритуал</span> }
+                        </div>
+                        <div class="small text-secondary mb-2">Классы: @spell.Classes</div>
+                        <div style="white-space: pre-line">@spell.Description</div>
+                    </div>
+                }
+            </div>
+        }
+    }
+    else
+    {
+        @if (monsters.Count == 0 && !string.IsNullOrWhiteSpace(query))
+        {
+            <p class="text-secondary">Ничего не найдено.</p>
+        }
+        @for (var i = 0; i < monsters.Count; i++)
+        {
+            var monster = monsters[i];
+            var index = i;
+            <div class="card mb-2">
+                <div class="card-header d-flex justify-content-between align-items-center" role="button" @onclick="() => ToggleExpanded(index)">
+                    <div>
+                        <strong class="me-2">@monster.Name</strong>
+                        <span class="text-secondary small">@monster.Size @monster.Type · CR @monster.ChallengeRating</span>
+                    </div>
+                    <span>@(expandedIndex == index ? "▲" : "▼")</span>
+                </div>
+                @if (expandedIndex == index)
+                {
+                    <div class="card-body">
+                        <div class="small text-secondary mb-2">
+                            AC @monster.ArmorClass · HP @monster.HitPoints · @monster.Speed · @monster.Alignment
+                        </div>
+                        <div style="white-space: pre-line">@monster.Description</div>
+                    </div>
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private enum Tab { Spells, Monsters }
+
+    private Tab activeTab = Tab.Spells;
+    private string query = "";
+    private bool isLoading;
+    private string? errorMessage;
+    private int expandedIndex = -1;
+    private List<SrdSpellSummary> spells = [];
+    private List<SrdMonsterSummary> monsters = [];
+    private CancellationTokenSource? debounceCts;
+
+    private void SwitchTab(Tab tab)
+    {
+        activeTab = tab;
+        query = "";
+        spells = [];
+        monsters = [];
+        errorMessage = null;
+        expandedIndex = -1;
+    }
+
+    private void ToggleExpanded(int index) => expandedIndex = expandedIndex == index ? -1 : index;
+
+    private void OnQueryChanged(ChangeEventArgs e)
+    {
+        query = e.Value?.ToString() ?? "";
+        expandedIndex = -1;
+
+        debounceCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        debounceCts = cts;
+
+        _ = DebounceSearch(cts.Token);
+    }
+
+    private async Task DebounceSearch(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(400, token);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+
+        if (!token.IsCancellationRequested)
+            await Search();
+    }
+
+    private async Task Search()
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            spells = [];
+            monsters = [];
+            errorMessage = null;
+            StateHasChanged();
+            return;
+        }
+
+        isLoading = true;
+        errorMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            if (activeTab == Tab.Spells)
+                spells = (await SrdService.SearchSpellsAsync(query)).ToList();
+            else
+                monsters = (await SrdService.SearchMonstersAsync(query)).ToList();
+        }
+        catch (Exception)
+        {
+            errorMessage = "Не удалось загрузить справочник — проверьте подключение к интернету.";
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+}

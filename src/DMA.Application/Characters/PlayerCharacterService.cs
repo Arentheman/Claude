@@ -50,6 +50,34 @@ public class PlayerCharacterService(IApplicationDbContext db, IFileStorageServic
         character.Currency.Clamp();
     }
 
+    public async Task UpdateHpAsync(int characterId, int currentHp, CancellationToken ct = default)
+    {
+        var character = await db.PlayerCharacters.FindAsync([characterId], ct);
+        if (character is null) return;
+        character.CurrentHp = Math.Clamp(currentHp, 0, Math.Max(character.MaxHp, currentHp));
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task UpdateArmorClassAsync(int characterId, int armorClass, CancellationToken ct = default)
+    {
+        var character = await db.PlayerCharacters.FindAsync([characterId], ct);
+        if (character is null) return;
+        character.ArmorClass = Math.Max(0, armorClass);
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task ToggleConditionAsync(int characterId, string condition, CancellationToken ct = default)
+    {
+        var character = await db.PlayerCharacters.FindAsync([characterId], ct);
+        if (character is null) return;
+
+        if (!character.Conditions.Remove(condition))
+            character.Conditions.Add(condition);
+
+        db.PlayerCharacters.Update(character);
+        await db.SaveChangesAsync(ct);
+    }
+
     public async Task DeleteAsync(int id, CancellationToken ct = default)
     {
         var character = await db.PlayerCharacters

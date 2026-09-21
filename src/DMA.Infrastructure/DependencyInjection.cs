@@ -1,5 +1,6 @@
 using DMA.Application.Common.Interfaces;
 using DMA.Infrastructure.Data;
+using DMA.Infrastructure.ExternalReference;
 using DMA.Infrastructure.Files;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -37,6 +38,12 @@ public static class DependencyInjection
 
         services.AddSingleton<FileStorageService>();
         services.AddSingleton<IFileStorageService>(sp => sp.GetRequiredService<FileStorageService>());
+
+        services.AddHttpClient<ISrdReferenceService, Open5eReferenceService>(client =>
+        {
+            client.BaseAddress = new Uri("https://api.open5e.com/v1/");
+            client.Timeout = TimeSpan.FromSeconds(10);
+        });
 
         return services;
     }

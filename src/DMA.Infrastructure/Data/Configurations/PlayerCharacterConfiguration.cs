@@ -13,6 +13,10 @@ public class PlayerCharacterConfiguration : IEntityTypeConfiguration<PlayerChara
         builder.Property(c => c.Notes).HasMaxLength(4000);
         builder.Property(c => c.PortraitPath).HasMaxLength(260);
 
+        builder.Property(c => c.Conditions)
+            .HasConversion(JsonStringListConversion.Converter)
+            .Metadata.SetValueComparer(JsonStringListConversion.Comparer);
+
         builder.OwnsOne(c => c.Abilities, ab =>
         {
             ab.Property(a => a.Strength).HasColumnName("Str");

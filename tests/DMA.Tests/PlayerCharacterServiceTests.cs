@@ -74,4 +74,44 @@ public class PlayerCharacterServiceTests
         var item = await db.InventoryItems.FirstAsync(i => i.PlayerCharacterId == character.Id);
         Assert.Equal(0, item.Quantity);
     }
+
+    [Fact]
+    public async Task ToggleConditionAsync_AddsThenRemovesTheSameCondition()
+    {
+        await using var db = CreateDb();
+        var service = new PlayerCharacterService(db, new NoOpFileStorageService());
+
+        var campaign = new Campaign { Name = "Test Campaign" };
+        db.Campaigns.Add(campaign);
+        var character = new PlayerCharacter { CampaignId = campaign.Id, Name = "Someone" };
+        db.PlayerCharacters.Add(character);
+        await db.SaveChangesAsync();
+
+        await service.ToggleConditionAsync(character.Id, "Poisoned");
+        var afterAdd = await db.PlayerCharacters.FindAsync(character.Id);
+        Assert.Contains("Poisoned", afterAdd!.Conditions);
+
+        await service.ToggleConditionAsync(character.Id, "Poisoned");
+        var afterRemove = await db.PlayerCharacters.FindAsync(character.Id);
+        Assert.DoesNotContain("Poisoned", afterRemove!.Conditions);
+    }
+
+    [Fact]
+    public async Task UpdateHpAsync_ClampsToZeroButAllowsExceedingMaxHp()
+    {
+        await using var db = CreateDb();
+        var service = new PlayerCharacterService(db, new NoOpFileStorageService());
+
+        var campaign = new Campaign { Name = "Test Campaign" };
+        db.Campaigns.Add(campaign);
+        var character = new PlayerCharacter { CampaignId = campaign.Id, Name = "Someone", MaxHp = 20, CurrentHp = 20 };
+        db.PlayerCharacters.Add(character);
+        await db.SaveChangesAsync();
+
+        await service.UpdateHpAsync(character.Id, -5);
+        Assert.Equal(0, (await db.PlayerCharacters.FindAsync(character.Id))!.CurrentHp);
+
+        await service.UpdateHpAsync(character.Id, 25);
+        Assert.Equal(25, (await db.PlayerCharacters.FindAsync(character.Id))!.CurrentHp);
+    }
 }

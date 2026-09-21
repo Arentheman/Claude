@@ -4,6 +4,7 @@
 @using DMA.Application.Sessions
 @using DMA.Application.Characters
 @using DMA.Application.Encounters
+@using DMA.Domain.Constants
 @using DMA.Domain.Entities
 @using DMA.Domain.Enums
 @inject CampaignService CampaignService
@@ -70,13 +71,14 @@ else
 
     <div class="section-card">
         <h2>Персонажи игроков</h2>
+        <p class="text-secondary small">Быстрая панель на сессию — HP, AC и состояния меняются прямо здесь, без захода в лист персонажа.</p>
         <div class="row g-3 mb-3">
             @foreach (var pc in characters)
             {
-                <div class="col-md-4 col-lg-3">
-                    <a class="text-decoration-none text-reset" href="@($"/campaigns/{Id}/characters/{pc.Id}")">
-                        <div class="card h-100 character-card">
-                            <div class="card-body d-flex gap-3 align-items-center">
+                <div class="col-md-6 col-lg-4">
+                    <div class="card h-100 character-card">
+                        <div class="card-body">
+                            <div class="d-flex gap-3 align-items-center mb-2">
                                 @if (!string.IsNullOrEmpty(pc.PortraitPath))
                                 {
                                     <img class="avatar-circle" src="@($"/uploads/{pc.PortraitPath}")" alt="@pc.Name" />
@@ -85,14 +87,42 @@ else
                                 {
                                     <div class="avatar-circle-placeholder">@Initials(pc.Name)</div>
                                 }
-                                <div>
+                                <div class="flex-grow-1">
                                     <div class="fw-semibold">@pc.Name</div>
                                     <div class="text-secondary small">@pc.Race @pc.Class, ур. @pc.Level</div>
-                                    <div class="small">HP @pc.CurrentHp/@pc.MaxHp · AC @pc.ArmorClass</div>
+                                </div>
+                                <a class="btn btn-sm btn-outline-secondary" href="@($"/campaigns/{Id}/characters/{pc.Id}")">Лист</a>
+                            </div>
+
+                            <div class="d-flex gap-2 align-items-center mb-2">
+                                <div class="input-group input-group-sm" style="max-width:140px">
+                                    <span class="input-group-text">HP</span>
+                                    <input type="number" min="0" class="form-control" value="@pc.CurrentHp"
+                                           @onchange="@(e => UpdateHp(pc, e.Value))" />
+                                    <span class="input-group-text">/@pc.MaxHp</span>
+                                </div>
+                                <div class="input-group input-group-sm" style="max-width:100px">
+                                    <span class="input-group-text">AC</span>
+                                    <input type="number" min="0" class="form-control" value="@pc.ArmorClass"
+                                           @onchange="@(e => UpdateAc(pc, e.Value))" />
                                 </div>
                             </div>
+
+                            <div>
+                                @foreach (var c in pc.Conditions)
+                                {
+                                    <span class="badge bg-info text-dark me-1 mb-1" role="button" @onclick="() => ToggleCondition(pc, c)">@c &times;</span>
+                                }
+                                <select class="form-select form-select-sm d-inline-block w-auto" @onchange="@(e => AddCondition(pc, e.Value?.ToString()))">
+                                    <option value="">+ состояние</option>
+                                    @foreach (var c in Dnd5eConditions.All.Where(c => !pc.Conditions.Contains(c)))
+                                    {
+                                        <option value="@c">@c</option>
+                                    }
+                                </select>
+                            </div>
                         </div>
-                    </a>
+                    </div>
                 </div>
             }
         </div>
@@ -173,6 +203,39 @@ else
     {
         await EncounterService.DeleteAsync(encounterId);
         encounters = await EncounterService.GetByCampaignAsync(Id);
+    }
+
+    private async Task UpdateHp(PlayerCharacter pc, object? value)
+    {
+        if (int.TryParse(value?.ToString(), out var hp))
+        {
+            await CharacterService.UpdateHpAsync(pc.Id, hp);
+            characters = await CharacterService.GetByCampaignAsync(Id);
+        }
+    }
+
+    private async Task UpdateAc(PlayerCharacter pc, object? value)
+    {
+        if (int.TryParse(value?.ToString(), out var ac))
+        {
+            await CharacterService.UpdateArmorClassAsync(pc.Id, ac);
+            characters = await CharacterService.GetByCampaignAsync(Id);
+        }
+    }
+
+    private async Task ToggleCondition(PlayerCharacter pc, string condition)
+    {
+        await CharacterService.ToggleConditionAsync(pc.Id, condition);
+        characters = await CharacterService.GetByCampaignAsync(Id);
+    }
+
+    private async Task AddCondition(PlayerCharacter pc, string? condition)
+    {
+        if (!string.IsNullOrWhiteSpace(condition))
+        {
+            await CharacterService.ToggleConditionAsync(pc.Id, condition);
+            characters = await CharacterService.GetByCampaignAsync(Id);
+        }
     }
 
     private static string EncounterBadge(EncounterStatus status) => status switch
