@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using DMA.Domain.Enums;
 
 namespace DMA.Domain.Entities;
@@ -11,8 +12,12 @@ public class StatBlock
     public StatBlockType Type { get; set; } = StatBlockType.Monster;
     public string? ChallengeRating { get; set; }
 
+    [Range(0, int.MaxValue, ErrorMessage = "HP не может быть отрицательным.")]
     public int MaxHp { get; set; }
+
+    [Range(0, int.MaxValue, ErrorMessage = "AC не может быть отрицательным.")]
     public int ArmorClass { get; set; }
+
     public string Speed { get; set; } = "30 ft.";
 
     public AbilityScores Abilities { get; set; } = new();

@@ -20,6 +20,7 @@ public class StatBlockService(IApplicationDbContext db)
 
     public async Task<StatBlock> CreateAsync(StatBlock statBlock, CancellationToken ct = default)
     {
+        ClampBounds(statBlock);
         db.StatBlocks.Add(statBlock);
         await db.SaveChangesAsync(ct);
         return statBlock;
@@ -27,8 +28,16 @@ public class StatBlockService(IApplicationDbContext db)
 
     public async Task UpdateAsync(StatBlock statBlock, CancellationToken ct = default)
     {
+        ClampBounds(statBlock);
         db.StatBlocks.Update(statBlock);
         await db.SaveChangesAsync(ct);
+    }
+
+    private static void ClampBounds(StatBlock statBlock)
+    {
+        statBlock.MaxHp = Math.Max(0, statBlock.MaxHp);
+        statBlock.ArmorClass = Math.Max(0, statBlock.ArmorClass);
+        statBlock.Abilities.Clamp();
     }
 
     public async Task DeleteAsync(int id, CancellationToken ct = default)

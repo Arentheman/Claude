@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace DMA.Domain.Entities;
 
 public class PlayerCharacter
@@ -10,10 +12,17 @@ public class PlayerCharacter
     public string PlayerName { get; set; } = string.Empty;
     public string Race { get; set; } = string.Empty;
     public string Class { get; set; } = string.Empty;
+
+    [Range(1, int.MaxValue, ErrorMessage = "Уровень не может быть меньше 1.")]
     public int Level { get; set; } = 1;
 
+    [Range(0, int.MaxValue, ErrorMessage = "HP не может быть отрицательным.")]
     public int MaxHp { get; set; }
+
+    [Range(0, int.MaxValue, ErrorMessage = "HP не может быть отрицательным.")]
     public int CurrentHp { get; set; }
+
+    [Range(0, int.MaxValue, ErrorMessage = "AC не может быть отрицательным.")]
     public int ArmorClass { get; set; }
 
     public AbilityScores Abilities { get; set; } = new();

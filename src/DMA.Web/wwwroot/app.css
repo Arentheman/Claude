@@ -140,6 +140,18 @@ h1:focus {
     margin-right: 0.5rem;
 }
 
+.paste-zone {
+    border: 1px dashed var(--bs-border-color);
+    border-radius: 0.375rem;
+    padding: 0.5rem;
+    outline: none;
+}
+
+.paste-zone:focus {
+    border-color: var(--bs-primary);
+    box-shadow: 0 0 0 0.2rem rgba(var(--bs-primary-rgb), 0.25);
+}
+
 .character-card {
     transition: box-shadow 0.15s ease, border-color 0.15s ease;
 }

@@ -4,8 +4,10 @@
 @using DMA.Domain.Entities
 @using DMA.Domain.Enums
 @using Microsoft.AspNetCore.Components.Forms
+@using System.ComponentModel.DataAnnotations
 @inject PlayerCharacterService CharacterService
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <PageTitle>@(character?.Name ?? "Новый персонаж")</PageTitle>
 
@@ -20,19 +22,24 @@ else
 
     <div class="section-card">
         <EditForm Model="character" OnValidSubmit="Save" FormName="edit-character">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="text-danger small" />
             <div class="row mb-3">
                 <div class="col-auto text-center">
                     @if (!IsNew)
                     {
-                        @if (!string.IsNullOrEmpty(character.PortraitPath))
-                        {
-                            <img class="avatar-circle avatar-circle-lg d-block mb-2" src="@($"/uploads/{character.PortraitPath}")" alt="@character.Name" />
-                        }
-                        else
-                        {
-                            <div class="avatar-circle-lg-placeholder mb-2">@Initials(character.Name)</div>
-                        }
-                        <InputFile OnChange="OnPortraitSelected" class="form-control form-control-sm" accept="image/*" />
+                        <div id="portrait-paste-zone" tabindex="0" class="paste-zone mb-2">
+                            @if (!string.IsNullOrEmpty(character.PortraitPath))
+                            {
+                                <img class="avatar-circle avatar-circle-lg d-block mb-2" src="@($"/uploads/{character.PortraitPath}")" alt="@character.Name" />
+                            }
+                            else
+                            {
+                                <div class="avatar-circle-lg-placeholder mb-2">@Initials(character.Name)</div>
+                            }
+                            <InputFile OnChange="OnPortraitSelected" class="form-control form-control-sm" accept="image/*" />
+                            <div class="text-secondary small mt-1">Кликните и Ctrl+V, или выберите файл</div>
+                        </div>
                     }
                     else
                     {
@@ -62,19 +69,19 @@ else
                     <div class="row">
                         <div class="col-md-3">
                             <label class="form-label">Уровень</label>
-                            <InputNumber class="form-control" @bind-Value="character.Level" />
+                            <InputNumber class="form-control" @bind-Value="character.Level" min="1" />
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">HP текущее</label>
-                            <InputNumber class="form-control" @bind-Value="character.CurrentHp" />
+                            <InputNumber class="form-control" @bind-Value="character.CurrentHp" min="0" />
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">HP максимум</label>
-                            <InputNumber class="form-control" @bind-Value="character.MaxHp" />
+                            <InputNumber class="form-control" @bind-Value="character.MaxHp" min="0" />
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">AC</label>
-                            <InputNumber class="form-control" @bind-Value="character.ArmorClass" />
+                            <InputNumber class="form-control" @bind-Value="character.ArmorClass" min="0" />
                         </div>
                     </div>
                 </div>
@@ -88,27 +95,27 @@ else
                     <div class="ability-stack">
                         <div class="ability-box">
                             <span class="ability-label">Сила</span>
-                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="character.Abilities.Strength" />
+                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="character.Abilities.Strength" min="@AbilityScores.MinScore" max="@AbilityScores.MaxScore" />
                         </div>
                         <div class="ability-box">
                             <span class="ability-label">Ловкость</span>
-                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="character.Abilities.Dexterity" />
+                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="character.Abilities.Dexterity" min="@AbilityScores.MinScore" max="@AbilityScores.MaxScore" />
                         </div>
                         <div class="ability-box">
                             <span class="ability-label">Телосложение</span>
-                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="character.Abilities.Constitution" />
+                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="character.Abilities.Constitution" min="@AbilityScores.MinScore" max="@AbilityScores.MaxScore" />
                         </div>
                         <div class="ability-box">
                             <span class="ability-label">Интеллект</span>
-                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="character.Abilities.Intelligence" />
+                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="character.Abilities.Intelligence" min="@AbilityScores.MinScore" max="@AbilityScores.MaxScore" />
                         </div>
                         <div class="ability-box">
                             <span class="ability-label">Мудрость</span>
-                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="character.Abilities.Wisdom" />
+                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="character.Abilities.Wisdom" min="@AbilityScores.MinScore" max="@AbilityScores.MaxScore" />
                         </div>
                         <div class="ability-box">
                             <span class="ability-label">Харизма</span>
-                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="character.Abilities.Charisma" />
+                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="character.Abilities.Charisma" min="@AbilityScores.MinScore" max="@AbilityScores.MaxScore" />
                         </div>
                     </div>
                 </div>
@@ -124,23 +131,23 @@ else
             <div class="row mb-3">
                 <div class="col-md-2">
                     <label class="form-label">ММ (медные)</label>
-                    <InputNumber class="form-control" @bind-Value="character.Currency.CopperPieces" />
+                    <InputNumber class="form-control" @bind-Value="character.Currency.CopperPieces" min="0" />
                 </div>
                 <div class="col-md-2">
                     <label class="form-label">СМ (серебряные)</label>
-                    <InputNumber class="form-control" @bind-Value="character.Currency.SilverPieces" />
+                    <InputNumber class="form-control" @bind-Value="character.Currency.SilverPieces" min="0" />
                 </div>
                 <div class="col-md-2">
                     <label class="form-label">ЭМ (электрум)</label>
-                    <InputNumber class="form-control" @bind-Value="character.Currency.ElectrumPieces" />
+                    <InputNumber class="form-control" @bind-Value="character.Currency.ElectrumPieces" min="0" />
                 </div>
                 <div class="col-md-2">
                     <label class="form-label">ЗМ (золотые)</label>
-                    <InputNumber class="form-control" @bind-Value="character.Currency.GoldPieces" />
+                    <InputNumber class="form-control" @bind-Value="character.Currency.GoldPieces" min="0" />
                 </div>
                 <div class="col-md-2">
                     <label class="form-label">ПМ (платиновые)</label>
-                    <InputNumber class="form-control" @bind-Value="character.Currency.PlatinumPieces" />
+                    <InputNumber class="form-control" @bind-Value="character.Currency.PlatinumPieces" min="0" />
                 </div>
             </div>
 
@@ -175,6 +182,8 @@ else
                 </table>
             }
             <EditForm Model="newFeature" OnValidSubmit="AddFeature" FormName="add-feature">
+                <DataAnnotationsValidator />
+                <ValidationSummary class="text-danger small" />
                 <div class="row g-2 align-items-end">
                     <div class="col-md-3">
                         <label class="form-label">Название</label>
@@ -191,7 +200,7 @@ else
                     {
                         <div class="col-md-1">
                             <label class="form-label">Ур.</label>
-                            <InputNumber class="form-control" @bind-Value="newFeature.Level" />
+                            <InputNumber class="form-control" @bind-Value="newFeature.Level" min="0" max="9" />
                         </div>
                     }
                     <div class="col-md-4">
@@ -221,7 +230,7 @@ else
                                 <tr>
                                     <td>@item.Name</td>
                                     <td style="width:100px">
-                                        <input type="number" class="form-control form-control-sm" value="@item.Quantity"
+                                        <input type="number" min="0" class="form-control form-control-sm" value="@item.Quantity"
                                                @onchange="@(e => UpdateItemQuantity(item, e.Value))" />
                                     </td>
                                     <td>@item.Notes</td>
@@ -233,6 +242,8 @@ else
                 }
             }
             <EditForm Model="newItem" OnValidSubmit="AddItem" FormName="add-item">
+                <DataAnnotationsValidator />
+                <ValidationSummary class="text-danger small" />
                 <div class="row g-2 align-items-end">
                     <div class="col-md-3">
                         <label class="form-label">Название</label>
@@ -249,7 +260,7 @@ else
                     </div>
                     <div class="col-md-1">
                         <label class="form-label">Кол-во</label>
-                        <InputNumber class="form-control" @bind-Value="newItem.Quantity" />
+                        <InputNumber class="form-control" @bind-Value="newItem.Quantity" min="0" />
                     </div>
                     <div class="col-md-4">
                         <label class="form-label">Заметки</label>
@@ -277,14 +288,17 @@ else
                     }
                 </div>
             }
-            <div class="row g-2 align-items-end">
-                <div class="col-md-5">
-                    <label class="form-label">Файл</label>
-                    <InputFile OnChange="OnAttachmentSelected" class="form-control" accept="image/*" />
-                </div>
-                <div class="col-md-5">
-                    <label class="form-label">Подпись</label>
-                    <input class="form-control" @bind="newAttachmentCaption" />
+            <div id="attachment-paste-zone" tabindex="0" class="paste-zone">
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-5">
+                        <label class="form-label">Файл</label>
+                        <InputFile OnChange="OnAttachmentSelected" class="form-control" accept="image/*" />
+                        <div class="text-secondary small mt-1">Кликните сюда и вставьте (Ctrl+V) скриншот, или выберите файл</div>
+                    </div>
+                    <div class="col-md-5">
+                        <label class="form-label">Подпись</label>
+                        <input class="form-control" @bind="newAttachmentCaption" />
+                    </div>
                 </div>
             </div>
         </div>
@@ -301,6 +315,15 @@ else
     private NewItemModel newItem = new();
     private NewFeatureModel newFeature = new();
     private string newAttachmentCaption = string.Empty;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!IsNew)
+        {
+            await JS.InvokeVoidAsync("dmaPasteUpload.register", "portrait-paste-zone");
+            await JS.InvokeVoidAsync("dmaPasteUpload.register", "attachment-paste-zone");
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -368,16 +391,21 @@ else
         await Reload();
     }
 
+    // Full-resolution screenshots (e.g. a pasted 4K desktop capture) can run well past a
+    // few MB as PNG; these ceilings just guard against pathological uploads, not normal ones.
+    private const long MaxPortraitSize = 15 * 1024 * 1024;
+    private const long MaxAttachmentSize = 30 * 1024 * 1024;
+
     private async Task OnPortraitSelected(InputFileChangeEventArgs e)
     {
-        await using var stream = e.File.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024);
+        await using var stream = e.File.OpenReadStream(maxAllowedSize: MaxPortraitSize);
         await CharacterService.SetPortraitAsync(Id, stream, e.File.Name);
         await Reload();
     }
 
     private async Task OnAttachmentSelected(InputFileChangeEventArgs e)
     {
-        await using var stream = e.File.OpenReadStream(maxAllowedSize: 15 * 1024 * 1024);
+        await using var stream = e.File.OpenReadStream(maxAllowedSize: MaxAttachmentSize);
         await CharacterService.AddAttachmentAsync(Id, stream, e.File.Name, e.File.ContentType, newAttachmentCaption);
         newAttachmentCaption = string.Empty;
         await Reload();
@@ -412,7 +440,10 @@ else
     private class NewItemModel
     {
         public string Name { get; set; } = string.Empty;
+
+        [Range(0, int.MaxValue, ErrorMessage = "Количество не может быть отрицательным.")]
         public int Quantity { get; set; } = 1;
+
         public string Notes { get; set; } = string.Empty;
         public InventoryItemCategory Category { get; set; } = InventoryItemCategory.Equipment;
     }
@@ -421,7 +452,10 @@ else
     {
         public string Name { get; set; } = string.Empty;
         public CharacterFeatureType Type { get; set; } = CharacterFeatureType.Ability;
+
+        [Range(0, 9, ErrorMessage = "Уровень заклинания от 0 (заговор) до 9.")]
         public int? Level { get; set; }
+
         public string Description { get; set; } = string.Empty;
     }
 }

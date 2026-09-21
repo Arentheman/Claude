@@ -79,6 +79,9 @@ public class EncounterService(IApplicationDbContext db)
     public async Task<EncounterParticipant> AddCustomAsync(
         int encounterId, string name, int initiative, int maxHp, int armorClass, CancellationToken ct = default)
     {
+        maxHp = Math.Max(0, maxHp);
+        armorClass = Math.Max(0, armorClass);
+
         var participant = new EncounterParticipant
         {
             EncounterId = encounterId,

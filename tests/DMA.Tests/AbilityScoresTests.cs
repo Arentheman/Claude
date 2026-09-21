@@ -15,4 +15,27 @@ public class AbilityScoresTests
     {
         Assert.Equal(expected, AbilityScores.Modifier(score));
     }
+
+    [Fact]
+    public void Clamp_KeepsScoresWithinConfiguredBounds()
+    {
+        var abilities = new AbilityScores
+        {
+            Strength = 500,
+            Dexterity = -500,
+            Constitution = 50,
+            Intelligence = 100,
+            Wisdom = -100,
+            Charisma = 0
+        };
+
+        abilities.Clamp();
+
+        Assert.Equal(AbilityScores.MaxScore, abilities.Strength);
+        Assert.Equal(AbilityScores.MinScore, abilities.Dexterity);
+        Assert.Equal(50, abilities.Constitution);
+        Assert.Equal(AbilityScores.MaxScore, abilities.Intelligence);
+        Assert.Equal(AbilityScores.MinScore, abilities.Wisdom);
+        Assert.Equal(0, abilities.Charisma);
+    }
 }

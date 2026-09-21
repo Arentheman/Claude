@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using DMA.Domain.Enums;
 
 namespace DMA.Domain.Entities;
@@ -12,7 +13,8 @@ public class CharacterFeature
     public string Name { get; set; } = string.Empty;
     public CharacterFeatureType Type { get; set; } = CharacterFeatureType.Ability;
 
-    /// <summary>Spell level (0 = cantrip). Meaningless for Type = Ability.</summary>
+    /// <summary>Spell level (0 = cantrip, 9 = highest). Meaningless for Type = Ability.</summary>
+    [Range(0, 9, ErrorMessage = "Уровень заклинания от 0 (заговор) до 9.")]
     public int? Level { get; set; }
 
     public string Description { get; set; } = string.Empty;

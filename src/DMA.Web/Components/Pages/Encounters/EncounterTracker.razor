@@ -68,7 +68,7 @@ else
                     </td>
                     <td style="width:140px">
                         <div class="input-group input-group-sm">
-                            <input type="number" class="form-control" value="@p.CurrentHp"
+                            <input type="number" min="0" class="form-control" value="@p.CurrentHp"
                                    @onchange="@(e => UpdateHp(p, e.Value))" />
                             <span class="input-group-text">/ @p.MaxHp</span>
                         </div>
@@ -137,8 +137,8 @@ else
                 <div class="input-group">
                     <input class="form-control" placeholder="Имя" @bind="customName" />
                     <input type="number" class="form-control" style="max-width:70px" placeholder="Иниц." @bind="customInitiative" />
-                    <input type="number" class="form-control" style="max-width:70px" placeholder="HP" @bind="customHp" />
-                    <input type="number" class="form-control" style="max-width:70px" placeholder="AC" @bind="customAc" />
+                    <input type="number" min="0" class="form-control" style="max-width:70px" placeholder="HP" @bind="customHp" />
+                    <input type="number" min="0" class="form-control" style="max-width:70px" placeholder="AC" @bind="customAc" />
                     <button class="btn btn-success" @onclick="AddCustom" disabled="@string.IsNullOrWhiteSpace(customName)">+</button>
                 </div>
             </div>

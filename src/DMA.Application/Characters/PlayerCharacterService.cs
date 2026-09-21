@@ -23,6 +23,7 @@ public class PlayerCharacterService(IApplicationDbContext db, IFileStorageServic
 
     public async Task<PlayerCharacter> CreateAsync(PlayerCharacter character, CancellationToken ct = default)
     {
+        ClampBounds(character);
         db.PlayerCharacters.Add(character);
         await db.SaveChangesAsync(ct);
         return character;
@@ -30,8 +31,23 @@ public class PlayerCharacterService(IApplicationDbContext db, IFileStorageServic
 
     public async Task UpdateAsync(PlayerCharacter character, CancellationToken ct = default)
     {
+        ClampBounds(character);
         db.PlayerCharacters.Update(character);
         await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// Server-side safety net matching the [Range] data annotations on PlayerCharacter: the UI
+    /// validates and blocks submission, but this keeps the data sane even for callers that skip it.
+    /// </summary>
+    private static void ClampBounds(PlayerCharacter character)
+    {
+        character.Level = Math.Max(1, character.Level);
+        character.MaxHp = Math.Max(0, character.MaxHp);
+        character.CurrentHp = Math.Max(0, character.CurrentHp);
+        character.ArmorClass = Math.Max(0, character.ArmorClass);
+        character.Abilities.Clamp();
+        character.Currency.Clamp();
     }
 
     public async Task DeleteAsync(int id, CancellationToken ct = default)
@@ -57,7 +73,7 @@ public class PlayerCharacterService(IApplicationDbContext db, IFileStorageServic
         {
             PlayerCharacterId = characterId,
             Name = name,
-            Quantity = quantity,
+            Quantity = Math.Max(0, quantity),
             Notes = notes,
             Category = category
         });
@@ -68,7 +84,7 @@ public class PlayerCharacterService(IApplicationDbContext db, IFileStorageServic
     {
         var item = await db.InventoryItems.FindAsync([itemId], ct);
         if (item is null) return;
-        item.Quantity = quantity;
+        item.Quantity = Math.Max(0, quantity);
         await db.SaveChangesAsync(ct);
     }
 
@@ -88,7 +104,7 @@ public class PlayerCharacterService(IApplicationDbContext db, IFileStorageServic
             PlayerCharacterId = characterId,
             Name = name,
             Type = type,
-            Level = type == CharacterFeatureType.Spell ? level : null,
+            Level = type == CharacterFeatureType.Spell ? Math.Clamp(level ?? 0, 0, 9) : null,
             Description = description
         });
         await db.SaveChangesAsync(ct);

@@ -19,6 +19,8 @@ else
 
     <div class="section-card">
         <EditForm Model="statBlock" OnValidSubmit="Save" FormName="edit-statblock">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="text-danger small" />
             <div class="row mb-3">
                 <div class="col-md-4">
                     <label class="form-label">Имя</label>
@@ -46,11 +48,11 @@ else
             <div class="row mb-3">
                 <div class="col-md-3">
                     <label class="form-label">HP</label>
-                    <InputNumber class="form-control" @bind-Value="statBlock.MaxHp" />
+                    <InputNumber class="form-control" @bind-Value="statBlock.MaxHp" min="0" />
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">AC</label>
-                    <InputNumber class="form-control" @bind-Value="statBlock.ArmorClass" />
+                    <InputNumber class="form-control" @bind-Value="statBlock.ArmorClass" min="0" />
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Скорость</label>
@@ -66,27 +68,27 @@ else
                     <div class="ability-stack">
                         <div class="ability-box">
                             <span class="ability-label">Сила</span>
-                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="statBlock.Abilities.Strength" />
+                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="statBlock.Abilities.Strength" min="@AbilityScores.MinScore" max="@AbilityScores.MaxScore" />
                         </div>
                         <div class="ability-box">
                             <span class="ability-label">Ловкость</span>
-                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="statBlock.Abilities.Dexterity" />
+                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="statBlock.Abilities.Dexterity" min="@AbilityScores.MinScore" max="@AbilityScores.MaxScore" />
                         </div>
                         <div class="ability-box">
                             <span class="ability-label">Телосложение</span>
-                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="statBlock.Abilities.Constitution" />
+                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="statBlock.Abilities.Constitution" min="@AbilityScores.MinScore" max="@AbilityScores.MaxScore" />
                         </div>
                         <div class="ability-box">
                             <span class="ability-label">Интеллект</span>
-                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="statBlock.Abilities.Intelligence" />
+                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="statBlock.Abilities.Intelligence" min="@AbilityScores.MinScore" max="@AbilityScores.MaxScore" />
                         </div>
                         <div class="ability-box">
                             <span class="ability-label">Мудрость</span>
-                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="statBlock.Abilities.Wisdom" />
+                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="statBlock.Abilities.Wisdom" min="@AbilityScores.MinScore" max="@AbilityScores.MaxScore" />
                         </div>
                         <div class="ability-box">
                             <span class="ability-label">Харизма</span>
-                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="statBlock.Abilities.Charisma" />
+                            <InputNumber class="form-control form-control-sm w-auto" style="max-width:80px" @bind-Value="statBlock.Abilities.Charisma" min="@AbilityScores.MinScore" max="@AbilityScores.MaxScore" />
                         </div>
                     </div>
                 </div>
