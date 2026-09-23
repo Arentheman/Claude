@@ -1,4 +1,5 @@
 using DMA.Application.Common.Interfaces;
+using DMA.Infrastructure.Backup;
 using DMA.Infrastructure.Data;
 using DMA.Infrastructure.Files;
 using Microsoft.EntityFrameworkCore;
@@ -37,6 +38,8 @@ public static class DependencyInjection
 
         services.AddSingleton<FileStorageService>();
         services.AddSingleton<IFileStorageService>(sp => sp.GetRequiredService<FileStorageService>());
+
+        services.AddScoped<IBackupService, BackupService>();
 
         return services;
     }

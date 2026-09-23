@@ -1,0 +1,103 @@
+@page "/backup"
+@rendermode InteractiveServer
+@using DMA.Application.Common.Interfaces
+@inject IBackupService BackupService
+
+<PageTitle>Резервная копия</PageTitle>
+
+<h1>Резервная копия</h1>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <h5 class="card-title">Экспорт</h5>
+        <p class="card-text text-secondary">
+            Скачайте файл сохранения — он содержит все кампании, персонажей, бестиарий и загруженные изображения.
+            Сохраните его, чтобы перенести данные на другой компьютер или сделать резервную копию.
+        </p>
+        <a class="btn btn-primary" href="/api/backup/export" download="dungeonmaster.dmasave">Скачать файл сохранения</a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <h5 class="card-title">Импорт</h5>
+        <p class="card-text text-secondary">
+            Загрузите файл сохранения (.dmasave), чтобы восстановить данные.
+        </p>
+        <div class="alert alert-danger">
+            Импорт полностью заменит все текущие данные (кампании, персонажей, бестиарий, изображения) содержимым файла.
+            Это действие необратимо.
+        </div>
+
+        <div class="mb-3">
+            <InputFile OnChange="OnFileSelected" class="form-control" accept=".dmasave" disabled="@isImporting" />
+        </div>
+
+        <div class="form-check mb-3">
+            <input type="checkbox" class="form-check-input" id="confirmImport" @bind="confirmed" disabled="@isImporting" />
+            <label class="form-check-label" for="confirmImport">
+                Я понимаю, что все текущие данные будут безвозвратно удалены и заменены
+            </label>
+        </div>
+
+        <button class="btn btn-danger" disabled="@(selectedFile is null || !confirmed || isImporting)" @onclick="Import">
+            @if (isImporting)
+            {
+                <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>
+            }
+            Импортировать и заменить всё
+        </button>
+
+        @if (errorMessage is not null)
+        {
+            <div class="alert alert-danger mt-3">@errorMessage</div>
+        }
+        @if (successMessage is not null)
+        {
+            <div class="alert alert-success mt-3">@successMessage</div>
+        }
+    </div>
+</div>
+
+@code {
+    private const long MaxBackupSize = 500 * 1024 * 1024;
+
+    private IBrowserFile? selectedFile;
+    private bool confirmed;
+    private bool isImporting;
+    private string? errorMessage;
+    private string? successMessage;
+
+    private void OnFileSelected(InputFileChangeEventArgs e)
+    {
+        selectedFile = e.File;
+        errorMessage = null;
+        successMessage = null;
+    }
+
+    private async Task Import()
+    {
+        if (selectedFile is null || !confirmed) return;
+
+        isImporting = true;
+        errorMessage = null;
+        successMessage = null;
+
+        try
+        {
+            await using var stream = selectedFile.OpenReadStream(maxAllowedSize: MaxBackupSize);
+            await BackupService.ImportAsync(stream);
+            successMessage = "Данные успешно восстановлены из файла сохранения.";
+            selectedFile = null;
+            confirmed = false;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isImporting = false;
+        }
+    }
+}

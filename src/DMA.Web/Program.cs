@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using DMA.Application;
+using DMA.Application.Common.Interfaces;
 using DMA.Infrastructure;
 using DMA.Infrastructure.Data;
 using DMA.Infrastructure.Data.Seed;
@@ -46,6 +47,12 @@ app.UseStaticFiles(new StaticFileOptions
 });
 
 app.UseAntiforgery();
+
+app.MapGet("/api/backup/export", async (IBackupService backupService) =>
+{
+    var stream = await backupService.ExportAsync();
+    return Results.File(stream, "application/zip", $"dungeonmaster-{DateTime.Now:yyyy-MM-dd}.dmasave");
+});
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
