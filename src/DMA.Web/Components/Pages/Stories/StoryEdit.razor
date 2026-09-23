@@ -1,0 +1,146 @@
+@page "/stories/{Id:int}"
+@rendermode InteractiveServer
+@using DMA.Application.Stories
+@using DMA.Domain.Entities
+@inject StoryService StoryService
+
+<PageTitle>@(story?.Name ?? "Сюжет")</PageTitle>
+
+@if (story is null)
+{
+    <p><em>@(loaded ? "Сюжет не найден." : "Загрузка...")</em></p>
+}
+else
+{
+    <a href="/stories">&larr; К списку сюжетов</a>
+    <h1>@story.Name</h1>
+
+    <div class="section-card">
+        <EditForm Model="story" OnValidSubmit="SaveStory" FormName="edit-story">
+            <div class="mb-2">
+                <label class="form-label">Название</label>
+                <InputText class="form-control" @bind-Value="story.Name" />
+            </div>
+            <div class="mb-2">
+                <label class="form-label">Описание</label>
+                <InputTextArea class="form-control" @bind-Value="story.Description" rows="2" />
+            </div>
+            <button type="submit" class="btn btn-primary">Сохранить</button>
+        </EditForm>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-md-5">
+            <div class="section-card">
+                <h5>Дерево сюжета</h5>
+                <button class="btn btn-sm btn-success mb-2" @onclick="() => AddNode(null)">+ Корневой узел</button>
+                @if (rootNodes.Count == 0)
+                {
+                    <p class="text-secondary small">Узлов пока нет.</p>
+                }
+                else
+                {
+                    @foreach (var root in rootNodes)
+                    {
+                        <StoryTreeNode Node="root" SelectedId="selectedNodeId" OnSelect="SelectNode" OnAddChild="(int pid) => AddNode(pid)" OnDelete="DeleteNode" />
+                    }
+                }
+            </div>
+        </div>
+        <div class="col-md-7">
+            <div class="section-card">
+                @if (selectedNode is null)
+                {
+                    <p class="text-secondary">Выберите узел слева, чтобы редактировать, или добавьте новый.</p>
+                }
+                else
+                {
+                    <EditForm Model="selectedNode" OnValidSubmit="SaveNode" FormName="edit-node">
+                        <div class="mb-2">
+                            <label class="form-label">Название узла</label>
+                            <InputText class="form-control" @bind-Value="selectedNode.Title" />
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">Описание / заметки</label>
+                            <InputTextArea class="form-control" @bind-Value="selectedNode.Description" rows="4" />
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">Планы встреч</label>
+                            <InputTextArea class="form-control" @bind-Value="selectedNode.PlannedEncounters" rows="2" />
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">Планы лута</label>
+                            <InputTextArea class="form-control" @bind-Value="selectedNode.PlannedLoot" rows="2" />
+                        </div>
+                        <button type="submit" class="btn btn-primary">Сохранить узел</button>
+                    </EditForm>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private Story? story;
+    private bool loaded;
+    private List<StoryNode> allNodes = [];
+    private List<StoryNode> rootNodes = [];
+    private int? selectedNodeId;
+    private StoryNode? selectedNode;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        story = await StoryService.GetByIdAsync(Id);
+        loaded = true;
+        if (story is null) return;
+
+        allNodes = await StoryService.GetNodesAsync(Id);
+        rootNodes = allNodes.Where(n => n.ParentNodeId is null).OrderBy(n => n.SortOrder).ToList();
+
+        selectedNode = selectedNodeId is int sid ? allNodes.FirstOrDefault(n => n.Id == sid) : null;
+        if (selectedNode is null) selectedNodeId = null;
+    }
+
+    private async Task SaveStory()
+    {
+        if (story is null) return;
+        await StoryService.UpdateAsync(story);
+    }
+
+    private void SelectNode(int nodeId)
+    {
+        selectedNodeId = nodeId;
+        selectedNode = allNodes.FirstOrDefault(n => n.Id == nodeId);
+    }
+
+    private async Task AddNode(int? parentNodeId)
+    {
+        var node = await StoryService.AddNodeAsync(Id, parentNodeId, "Новый узел");
+        await Load();
+        SelectNode(node.Id);
+    }
+
+    private async Task SaveNode()
+    {
+        if (selectedNode is null) return;
+        await StoryService.UpdateNodeAsync(
+            selectedNode.Id, selectedNode.Title, selectedNode.Description,
+            selectedNode.PlannedEncounters, selectedNode.PlannedLoot);
+        await Load();
+    }
+
+    private async Task DeleteNode(int nodeId)
+    {
+        await StoryService.DeleteNodeAsync(nodeId);
+        if (selectedNodeId == nodeId)
+        {
+            selectedNodeId = null;
+            selectedNode = null;
+        }
+        await Load();
+    }
+}

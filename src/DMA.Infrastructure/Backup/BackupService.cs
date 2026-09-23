@@ -45,7 +45,8 @@ public class BackupService(AppDbContext db, IFileStorageService fileStorage) : I
                 ExportedAtUtc = DateTime.UtcNow,
                 Campaigns = await db.Campaigns.CountAsync(ct),
                 PlayerCharacters = await db.PlayerCharacters.CountAsync(ct),
-                StatBlocks = await db.StatBlocks.CountAsync(ct)
+                StatBlocks = await db.StatBlocks.CountAsync(ct),
+                Stories = await db.Stories.CountAsync(ct)
             };
             await File.WriteAllTextAsync(
                 Path.Combine(stagingDir.FullName, ManifestFileNameInZip),
@@ -95,10 +96,20 @@ public class BackupService(AppDbContext db, IFileStorageService fileStorage) : I
             await using var transaction = await db.Database.BeginTransactionAsync(ct);
             try
             {
-                // Deleting the two root tables cascades (at the SQLite foreign-key level) to every
-                // child table, so this alone empties the whole database.
+                // Deleting the three root tables cascades (at the SQLite foreign-key level) to
+                // every child table, so this alone empties the whole database. Stories is its own
+                // root — it isn't reachable from Campaigns or StatBlocks — but Campaign.SourceStoryId
+                // is ON DELETE SET NULL, so the order between these three doesn't matter.
                 await db.Database.ExecuteSqlRawAsync("DELETE FROM \"Campaigns\";", ct);
                 await db.Database.ExecuteSqlRawAsync("DELETE FROM \"StatBlocks\";", ct);
+                await db.Database.ExecuteSqlRawAsync("DELETE FROM \"Stories\";", ct);
+
+                // Stories first and alone: Campaigns.SourceStoryId references it, and inserts are
+                // only guaranteed FK-safe across separate SaveChanges calls in this codebase (see
+                // the class doc) — never by relying on same-call ordering for entities carrying
+                // already-assigned keys.
+                db.Stories.AddRange(snapshot.Stories);
+                await db.SaveChangesAsync(ct);
 
                 db.Campaigns.AddRange(snapshot.Campaigns);
                 db.StatBlocks.AddRange(snapshot.StatBlocks);
@@ -107,12 +118,19 @@ public class BackupService(AppDbContext db, IFileStorageService fileStorage) : I
                 db.Sessions.AddRange(snapshot.Sessions);
                 db.PlayerCharacters.AddRange(snapshot.PlayerCharacters);
                 db.Encounters.AddRange(snapshot.Encounters);
+                // Parent-before-child within this same call relies on Id ascending order already
+                // matching tree depth (ReadSnapshotAsync orders by Id; the app always creates a
+                // parent node before any of its children, so parent Id < child Id by construction).
+                db.StoryNodes.AddRange(snapshot.StoryNodes);
                 await db.SaveChangesAsync(ct);
 
                 db.InventoryItems.AddRange(snapshot.InventoryItems);
                 db.CharacterFeatures.AddRange(snapshot.CharacterFeatures);
                 db.CharacterAttachments.AddRange(snapshot.CharacterAttachments);
                 db.EncounterParticipants.AddRange(snapshot.EncounterParticipants);
+                // Same parent-before-child reasoning as StoryNodes above, plus this depends on
+                // StoryNodes (nullable SourceStoryNodeId) already committed in the tier above.
+                db.CampaignStoryNodes.AddRange(snapshot.CampaignStoryNodes);
                 await db.SaveChangesAsync(ct);
 
                 await transaction.CommitAsync(ct);
@@ -166,7 +184,12 @@ public class BackupService(AppDbContext db, IFileStorageService fileStorage) : I
                 InventoryItems: await source.InventoryItems.AsNoTracking().ToListAsync(ct),
                 CharacterFeatures: await source.CharacterFeatures.AsNoTracking().ToListAsync(ct),
                 CharacterAttachments: await source.CharacterAttachments.AsNoTracking().ToListAsync(ct),
-                EncounterParticipants: await source.EncounterParticipants.AsNoTracking().ToListAsync(ct));
+                EncounterParticipants: await source.EncounterParticipants.AsNoTracking().ToListAsync(ct),
+                Stories: await source.Stories.AsNoTracking().ToListAsync(ct),
+                // Ascending Id order guarantees parent-before-child within these self-referencing
+                // tables, since the app always creates a parent node before any of its children.
+                StoryNodes: await source.StoryNodes.AsNoTracking().OrderBy(n => n.Id).ToListAsync(ct),
+                CampaignStoryNodes: await source.CampaignStoryNodes.AsNoTracking().OrderBy(n => n.Id).ToListAsync(ct));
         }
         catch (Exception ex)
         {
@@ -206,5 +229,8 @@ public class BackupService(AppDbContext db, IFileStorageService fileStorage) : I
         List<Domain.Entities.InventoryItem> InventoryItems,
         List<Domain.Entities.CharacterFeature> CharacterFeatures,
         List<Domain.Entities.CharacterAttachment> CharacterAttachments,
-        List<Domain.Entities.EncounterParticipant> EncounterParticipants);
+        List<Domain.Entities.EncounterParticipant> EncounterParticipants,
+        List<Domain.Entities.Story> Stories,
+        List<Domain.Entities.StoryNode> StoryNodes,
+        List<Domain.Entities.CampaignStoryNode> CampaignStoryNodes);
 }

@@ -15,6 +15,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<StatBlock> StatBlocks => Set<StatBlock>();
     public DbSet<Encounter> Encounters => Set<Encounter>();
     public DbSet<EncounterParticipant> EncounterParticipants => Set<EncounterParticipant>();
+    public DbSet<Story> Stories => Set<Story>();
+    public DbSet<StoryNode> StoryNodes => Set<StoryNode>();
+    public DbSet<CampaignStoryNode> CampaignStoryNodes => Set<CampaignStoryNode>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

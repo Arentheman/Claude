@@ -25,5 +25,17 @@ public class CampaignConfiguration : IEntityTypeConfiguration<Campaign>
             .WithOne(e => e.Campaign)
             .HasForeignKey(e => e.CampaignId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(c => c.StoryNodes)
+            .WithOne(n => n.Campaign)
+            .HasForeignKey(n => n.CampaignId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // SetNull, not Cascade: deleting the master Story shouldn't take the campaign (or its
+        // already-copied CampaignStoryNode tree) down with it — the copy is independent by design.
+        builder.HasOne(c => c.SourceStory)
+            .WithMany()
+            .HasForeignKey(c => c.SourceStoryId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }

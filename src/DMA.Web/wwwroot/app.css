@@ -160,3 +160,46 @@ h1:focus {
     border-color: var(--bs-primary);
     box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.15);
 }
+
+/* Outline tree for story plot nodes (master and per-campaign copy) */
+.story-tree-children {
+    margin-left: 1rem;
+    padding-left: 0.75rem;
+    border-left: 1px solid var(--bs-border-color);
+}
+
+.story-tree-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.15rem 0.4rem;
+    border-radius: 0.25rem;
+    cursor: pointer;
+}
+
+.story-tree-row:hover {
+    background-color: var(--bs-tertiary-bg);
+}
+
+.story-tree-row-selected {
+    background-color: var(--bs-primary-bg-subtle);
+    font-weight: 600;
+}
+
+.story-tree-row-actions {
+    white-space: nowrap;
+}
+
+.story-status-dot {
+    display: inline-block;
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 50%;
+    margin-right: 0.35rem;
+}
+
+.story-status-planned { background-color: var(--bs-secondary); }
+.story-status-current { background-color: var(--bs-warning); }
+.story-status-visited { background-color: var(--bs-success); }
+.story-status-abandoned { background-color: var(--bs-danger); opacity: 0.5; }

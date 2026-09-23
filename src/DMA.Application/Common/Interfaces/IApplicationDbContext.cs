@@ -18,6 +18,9 @@ public interface IApplicationDbContext
     DbSet<StatBlock> StatBlocks { get; }
     DbSet<Encounter> Encounters { get; }
     DbSet<EncounterParticipant> EncounterParticipants { get; }
+    DbSet<Story> Stories { get; }
+    DbSet<StoryNode> StoryNodes { get; }
+    DbSet<CampaignStoryNode> CampaignStoryNodes { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }
