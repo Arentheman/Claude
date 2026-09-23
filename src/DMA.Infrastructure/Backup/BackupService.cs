@@ -143,13 +143,20 @@ public class BackupService(AppDbContext db, IFileStorageService fileStorage) : I
 
     private static async Task<ImportedSnapshot> ReadSnapshotAsync(string importedDbPath, CancellationToken ct)
     {
+        // Pooling=False is required here: Microsoft.Data.Sqlite pools the native connection by
+        // default, which keeps an OS-level handle on importedDbPath open even after this context
+        // is disposed. On Windows that handle blocks the temp-folder cleanup in ImportAsync's
+        // finally block ("file in use by another process"); Linux doesn't enforce that lock, so
+        // this only surfaces on Windows. Disabling pooling for this short-lived context closes
+        // the file for good on Dispose.
+        var connectionString = $"Data Source={importedDbPath};Pooling=False";
         var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite($"Data Source={importedDbPath}")
+            .UseSqlite(connectionString)
             .Options;
 
-        await using var source = new AppDbContext(options);
         try
         {
+            await using var source = new AppDbContext(options);
             return new ImportedSnapshot(
                 Campaigns: await source.Campaigns.AsNoTracking().ToListAsync(ct),
                 StatBlocks: await source.StatBlocks.AsNoTracking().ToListAsync(ct),
