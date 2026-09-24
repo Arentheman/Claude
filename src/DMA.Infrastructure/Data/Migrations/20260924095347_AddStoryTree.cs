@@ -50,8 +50,7 @@ namespace DMA.Infrastructure.Data.Migrations
                     StoryId = table.Column<int>(type: "INTEGER", nullable: false),
                     ParentNodeId = table.Column<int>(type: "INTEGER", nullable: true),
                     Title = table.Column<string>(type: "TEXT", maxLength: 200, nullable: false),
-                    Description = table.Column<string>(type: "TEXT", maxLength: 8000, nullable: false),
-                    PlannedEncounters = table.Column<string>(type: "TEXT", maxLength: 4000, nullable: false),
+                    Description = table.Column<string>(type: "TEXT", maxLength: 20000, nullable: false),
                     PlannedLoot = table.Column<string>(type: "TEXT", maxLength: 4000, nullable: false),
                     SortOrder = table.Column<int>(type: "INTEGER", nullable: false)
                 },
@@ -82,8 +81,7 @@ namespace DMA.Infrastructure.Data.Migrations
                     ParentNodeId = table.Column<int>(type: "INTEGER", nullable: true),
                     SourceStoryNodeId = table.Column<int>(type: "INTEGER", nullable: true),
                     Title = table.Column<string>(type: "TEXT", maxLength: 200, nullable: false),
-                    Description = table.Column<string>(type: "TEXT", maxLength: 8000, nullable: false),
-                    PlannedEncounters = table.Column<string>(type: "TEXT", maxLength: 4000, nullable: false),
+                    Description = table.Column<string>(type: "TEXT", maxLength: 20000, nullable: false),
                     PlannedLoot = table.Column<string>(type: "TEXT", maxLength: 4000, nullable: false),
                     SortOrder = table.Column<int>(type: "INTEGER", nullable: false),
                     Status = table.Column<int>(type: "INTEGER", nullable: false)

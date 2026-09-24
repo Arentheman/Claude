@@ -203,3 +203,16 @@ h1:focus {
 .story-status-current { background-color: var(--bs-warning); }
 .story-status-visited { background-color: var(--bs-success); }
 .story-status-abandoned { background-color: var(--bs-danger); opacity: 0.5; }
+
+/* Story node editor: notes dominate the panel (a full "chapter", not a quick note), loot gets a
+   modest but noticeably bigger box than the old 2-row stub. Both scroll natively once content
+   exceeds the visible area; resize:vertical lets the DM stretch further if they want. */
+.story-node-notes {
+    min-height: 60vh;
+    resize: vertical;
+}
+
+.story-node-loot {
+    min-height: 8rem;
+    resize: vertical;
+}

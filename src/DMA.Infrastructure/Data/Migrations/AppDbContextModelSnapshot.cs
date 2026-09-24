@@ -60,16 +60,11 @@ namespace DMA.Infrastructure.Data.Migrations
 
                     b.Property<string>("Description")
                         .IsRequired()
-                        .HasMaxLength(8000)
+                        .HasMaxLength(20000)
                         .HasColumnType("TEXT");
 
                     b.Property<int?>("ParentNodeId")
                         .HasColumnType("INTEGER");
-
-                    b.Property<string>("PlannedEncounters")
-                        .IsRequired()
-                        .HasMaxLength(4000)
-                        .HasColumnType("TEXT");
 
                     b.Property<string>("PlannedLoot")
                         .IsRequired()
@@ -466,16 +461,11 @@ namespace DMA.Infrastructure.Data.Migrations
 
                     b.Property<string>("Description")
                         .IsRequired()
-                        .HasMaxLength(8000)
+                        .HasMaxLength(20000)
                         .HasColumnType("TEXT");
 
                     b.Property<int?>("ParentNodeId")
                         .HasColumnType("INTEGER");
-
-                    b.Property<string>("PlannedEncounters")
-                        .IsRequired()
-                        .HasMaxLength(4000)
-                        .HasColumnType("TEXT");
 
                     b.Property<string>("PlannedLoot")
                         .IsRequired()

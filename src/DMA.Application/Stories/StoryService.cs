@@ -56,14 +56,13 @@ public class StoryService(IApplicationDbContext db)
     }
 
     public async Task UpdateNodeAsync(
-        int nodeId, string title, string description, string plannedEncounters, string plannedLoot,
+        int nodeId, string title, string description, string plannedLoot,
         CancellationToken ct = default)
     {
         var node = await db.StoryNodes.FindAsync([nodeId], ct);
         if (node is null) return;
         node.Title = title;
         node.Description = description;
-        node.PlannedEncounters = plannedEncounters;
         node.PlannedLoot = plannedLoot;
         await db.SaveChangesAsync(ct);
     }

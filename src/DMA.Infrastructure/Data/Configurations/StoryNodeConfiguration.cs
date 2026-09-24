@@ -9,8 +9,7 @@ public class StoryNodeConfiguration : IEntityTypeConfiguration<StoryNode>
     public void Configure(EntityTypeBuilder<StoryNode> builder)
     {
         builder.Property(n => n.Title).IsRequired().HasMaxLength(200);
-        builder.Property(n => n.Description).HasMaxLength(8000);
-        builder.Property(n => n.PlannedEncounters).HasMaxLength(4000);
+        builder.Property(n => n.Description).HasMaxLength(20000);
         builder.Property(n => n.PlannedLoot).HasMaxLength(4000);
 
         // Restrict (not Cascade): a node with children can't be deleted directly — the service

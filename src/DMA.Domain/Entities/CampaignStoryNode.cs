@@ -26,7 +26,6 @@ public class CampaignStoryNode
 
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
-    public string PlannedEncounters { get; set; } = string.Empty;
     public string PlannedLoot { get; set; } = string.Empty;
     public int SortOrder { get; set; }
 

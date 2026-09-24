@@ -39,7 +39,6 @@ public class CampaignStoryService(IApplicationDbContext db)
             SourceStoryNodeId = source.Id,
             Title = source.Title,
             Description = source.Description,
-            PlannedEncounters = source.PlannedEncounters,
             PlannedLoot = source.PlannedLoot,
             SortOrder = source.SortOrder,
             Status = StoryNodeStatus.Planned
@@ -83,14 +82,13 @@ public class CampaignStoryService(IApplicationDbContext db)
     }
 
     public async Task UpdateNodeAsync(
-        int nodeId, string title, string description, string plannedEncounters, string plannedLoot,
+        int nodeId, string title, string description, string plannedLoot,
         CancellationToken ct = default)
     {
         var node = await db.CampaignStoryNodes.FindAsync([nodeId], ct);
         if (node is null) return;
         node.Title = title;
         node.Description = description;
-        node.PlannedEncounters = plannedEncounters;
         node.PlannedLoot = plannedLoot;
         await db.SaveChangesAsync(ct);
     }
@@ -149,7 +147,6 @@ public class CampaignStoryService(IApplicationDbContext db)
         {
             existing.Title = source.Title;
             existing.Description = source.Description;
-            existing.PlannedEncounters = source.PlannedEncounters;
             existing.PlannedLoot = source.PlannedLoot;
         }
         else
@@ -161,7 +158,6 @@ public class CampaignStoryService(IApplicationDbContext db)
                 SourceStoryNodeId = storyNodeId,
                 Title = source.Title,
                 Description = source.Description,
-                PlannedEncounters = source.PlannedEncounters,
                 PlannedLoot = source.PlannedLoot,
                 SortOrder = await NextSortOrderAsync(campaignId, targetParentNodeId, ct),
                 Status = StoryNodeStatus.Planned

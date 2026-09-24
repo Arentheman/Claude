@@ -9,8 +9,7 @@ public class CampaignStoryNodeConfiguration : IEntityTypeConfiguration<CampaignS
     public void Configure(EntityTypeBuilder<CampaignStoryNode> builder)
     {
         builder.Property(n => n.Title).IsRequired().HasMaxLength(200);
-        builder.Property(n => n.Description).HasMaxLength(8000);
-        builder.Property(n => n.PlannedEncounters).HasMaxLength(4000);
+        builder.Property(n => n.Description).HasMaxLength(20000);
         builder.Property(n => n.PlannedLoot).HasMaxLength(4000);
 
         // Restrict for the same reason as StoryNode's self-reference: the service layer deletes
