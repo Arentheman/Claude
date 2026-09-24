@@ -51,6 +51,7 @@ else
                         <div class="d-flex align-items-center gap-2 mb-2">
                             <span class="flex-grow-1">@n.Title</span>
                             <select class="form-select form-select-sm" style="max-width:200px"
+                                    value="@(pullTargets.GetValueOrDefault(n.Id)?.ToString() ?? "")"
                                     @onchange="@(e => pullTargets[n.Id] = int.TryParse(e.Value?.ToString(), out var v) ? v : null)">
                                 <option value="">— в корень —</option>
                                 @foreach (var target in allNodes)
@@ -135,6 +136,13 @@ else
         allNodes = await CampaignStoryService.GetNodesAsync(CampaignId);
         rootNodes = allNodes.Where(n => n.ParentNodeId is null).OrderBy(n => n.SortOrder).ToList();
         pullableNodes = await CampaignStoryService.GetPullableNodesAsync(CampaignId);
+
+        // Drop any remembered target for a node that's no longer pullable, so if it becomes
+        // pullable again later (e.g. its campaign copy gets deleted), the picker starts back at
+        // "— в корень —" instead of silently reusing a choice from a previous, unrelated pull.
+        var pullableIds = pullableNodes.Select(n => n.Id).ToHashSet();
+        foreach (var staleKey in pullTargets.Keys.Where(k => !pullableIds.Contains(k)).ToList())
+            pullTargets.Remove(staleKey);
 
         selectedNode = selectedNodeId is int sid ? allNodes.FirstOrDefault(n => n.Id == sid) : null;
         if (selectedNode is null) selectedNodeId = null;
