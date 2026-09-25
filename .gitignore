@@ -4,9 +4,6 @@ obj/
 *.user
 publish/
 
-## Windows release zip — built on request, not tracked on every branch
-releases/
-
 ## SQLite local database
 *.db
 *.db-shm
