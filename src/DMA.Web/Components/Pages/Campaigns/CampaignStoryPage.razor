@@ -1,0 +1,195 @@
+@page "/campaigns/{CampaignId:int}/story"
+@rendermode InteractiveServer
+@using DMA.Application.Campaigns
+@using DMA.Application.Stories
+@using DMA.Domain.Entities
+@using DMA.Domain.Enums
+@inject CampaignService CampaignService
+@inject CampaignStoryService CampaignStoryService
+
+<PageTitle>Сюжет кампании</PageTitle>
+
+@if (campaign is null)
+{
+    <p><em>@(loaded ? "Кампания не найдена." : "Загрузка...")</em></p>
+}
+else if (campaign.SourceStoryId is null)
+{
+    <p><em>К этой кампании не привязан сюжет.</em></p>
+    <a href="@($"/campaigns/{CampaignId}")">&larr; К кампании</a>
+}
+else
+{
+    <a href="@($"/campaigns/{CampaignId}")">&larr; К кампании</a>
+    <h1>Сюжет: @campaign.Name</h1>
+
+    <div class="row g-3">
+        <div class="col-md-4">
+            <div class="section-card">
+                <h5>Дерево</h5>
+                <button class="btn btn-sm btn-success mb-2" @onclick="() => AddNode(null)">+ Корневой узел</button>
+                @if (rootNodes.Count == 0)
+                {
+                    <p class="text-secondary small">Узлов пока нет.</p>
+                }
+                else
+                {
+                    @foreach (var root in rootNodes)
+                    {
+                        <CampaignStoryTreeNode Node="root" SelectedId="selectedNodeId" OnSelect="SelectNode" OnAddChild="(int pid) => AddNode(pid)" OnDelete="DeleteNode" />
+                    }
+                }
+            </div>
+
+            @if (pullableNodes.Count > 0)
+            {
+                <div class="section-card">
+                    <h5>Обновления из шаблона</h5>
+                    <p class="text-secondary small">Узлы шаблона, которых ещё нет в этой кампании. Правки мастер-сюжета сюда сами не попадают — добавляйте вручную.</p>
+                    @foreach (var n in pullableNodes)
+                    {
+                        <div class="d-flex align-items-center gap-2 mb-2">
+                            <span class="flex-grow-1">@n.Title</span>
+                            <select class="form-select form-select-sm" style="max-width:200px"
+                                    value="@(pullTargets.GetValueOrDefault(n.Id)?.ToString() ?? "")"
+                                    @onchange="@(e => pullTargets[n.Id] = int.TryParse(e.Value?.ToString(), out var v) ? v : null)">
+                                <option value="">— в корень —</option>
+                                @foreach (var target in allNodes)
+                                {
+                                    <option value="@target.Id">@target.Title</option>
+                                }
+                            </select>
+                            <button class="btn btn-sm btn-outline-success text-nowrap" @onclick="() => PullNode(n.Id)">Добавить</button>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+        <div class="col-md-8">
+            <div class="section-card">
+                @if (selectedNode is null)
+                {
+                    <p class="text-secondary">Выберите узел слева.</p>
+                }
+                else
+                {
+                    <EditForm Model="selectedNode" OnValidSubmit="SaveNode" FormName="edit-campaign-node">
+                        <div class="row mb-2">
+                            <div class="col-md-8">
+                                <label class="form-label">Название узла</label>
+                                <InputText class="form-control" @bind-Value="selectedNode.Title" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Статус</label>
+                                <InputSelect class="form-select" @bind-Value="selectedNode.Status">
+                                    @foreach (var status in Enum.GetValues<StoryNodeStatus>())
+                                    {
+                                        <option value="@status">@status</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">Описание / заметки по игре</label>
+                            <InputTextArea class="form-control story-node-notes" @bind-Value="selectedNode.Description" rows="20" />
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">Планы лута</label>
+                            <InputTextArea class="form-control story-node-loot" @bind-Value="selectedNode.PlannedLoot" rows="5" />
+                        </div>
+                        <button type="submit" class="btn btn-primary">Сохранить узел</button>
+                        @if (selectedNode.SourceStoryNodeId is not null)
+                        {
+                            <button type="button" class="btn btn-outline-secondary" @onclick="PullSelectedFromTemplate">Обновить содержимое из шаблона</button>
+                        }
+                    </EditForm>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int CampaignId { get; set; }
+
+    private Campaign? campaign;
+    private bool loaded;
+    private List<CampaignStoryNode> allNodes = [];
+    private List<CampaignStoryNode> rootNodes = [];
+    private List<StoryNode> pullableNodes = [];
+    private Dictionary<int, int?> pullTargets = new();
+    private int? selectedNodeId;
+    private CampaignStoryNode? selectedNode;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        campaign = await CampaignService.GetByIdAsync(CampaignId);
+        loaded = true;
+        if (campaign?.SourceStoryId is null) return;
+
+        allNodes = await CampaignStoryService.GetNodesAsync(CampaignId);
+        rootNodes = allNodes.Where(n => n.ParentNodeId is null).OrderBy(n => n.SortOrder).ToList();
+        pullableNodes = await CampaignStoryService.GetPullableNodesAsync(CampaignId);
+
+        // Drop any remembered target for a node that's no longer pullable, so if it becomes
+        // pullable again later (e.g. its campaign copy gets deleted), the picker starts back at
+        // "— в корень —" instead of silently reusing a choice from a previous, unrelated pull.
+        var pullableIds = pullableNodes.Select(n => n.Id).ToHashSet();
+        foreach (var staleKey in pullTargets.Keys.Where(k => !pullableIds.Contains(k)).ToList())
+            pullTargets.Remove(staleKey);
+
+        selectedNode = selectedNodeId is int sid ? allNodes.FirstOrDefault(n => n.Id == sid) : null;
+        if (selectedNode is null) selectedNodeId = null;
+    }
+
+    private void SelectNode(int nodeId)
+    {
+        selectedNodeId = nodeId;
+        selectedNode = allNodes.FirstOrDefault(n => n.Id == nodeId);
+    }
+
+    private async Task AddNode(int? parentNodeId)
+    {
+        var node = await CampaignStoryService.AddNodeAsync(CampaignId, parentNodeId, "Новый узел");
+        await Load();
+        SelectNode(node.Id);
+    }
+
+    private async Task SaveNode()
+    {
+        if (selectedNode is null) return;
+        await CampaignStoryService.UpdateNodeAsync(
+            selectedNode.Id, selectedNode.Title, selectedNode.Description, selectedNode.PlannedLoot);
+        await CampaignStoryService.SetStatusAsync(selectedNode.Id, selectedNode.Status);
+        await Load();
+    }
+
+    private async Task DeleteNode(int nodeId)
+    {
+        await CampaignStoryService.DeleteNodeAsync(nodeId);
+        if (selectedNodeId == nodeId)
+        {
+            selectedNodeId = null;
+            selectedNode = null;
+        }
+        await Load();
+    }
+
+    private async Task PullNode(int storyNodeId)
+    {
+        var target = pullTargets.GetValueOrDefault(storyNodeId);
+        await CampaignStoryService.PullNodeAsync(CampaignId, storyNodeId, target);
+        await Load();
+    }
+
+    private async Task PullSelectedFromTemplate()
+    {
+        if (selectedNode?.SourceStoryNodeId is int sourceId)
+        {
+            await CampaignStoryService.PullNodeAsync(CampaignId, sourceId, selectedNode.ParentNodeId);
+            await Load();
+        }
+    }
+}

@@ -60,7 +60,7 @@ else
                 <tr class="@(isCurrentTurn ? "table-warning" : "") @(!p.IsActive ? "text-muted" : "")">
                     <td>@(isCurrentTurn ? "▶" : "")</td>
                     <td>
-                        @p.Name
+                        <span class="entity-name-link" role="button" @onclick="() => SelectParticipant(p)">@p.Name</span>
                         <span class="badge bg-light text-dark">@p.SourceType</span>
                     </td>
                     <td style="width:80px">
@@ -78,13 +78,13 @@ else
                     <td>
                         @foreach (var c in p.Conditions)
                         {
-                            <span class="badge bg-info text-dark me-1" role="button" @onclick="() => ToggleCondition(p, c)">@c &times;</span>
+                            <ConditionBadge Key="@c" Removable="true" OnRemove="() => ToggleCondition(p, c)" />
                         }
                         <select class="form-select form-select-sm d-inline-block w-auto" @onchange="@(e => AddCondition(p, e.Value?.ToString()))">
                             <option value="">+ состояние</option>
                             @foreach (var c in Dnd5eConditions.All.Where(c => !p.Conditions.Contains(c)))
                             {
-                                <option value="@c">@c</option>
+                                <option value="@c">@Dnd5eConditions.NameRu(c)</option>
                             }
                         </select>
                     </td>
@@ -145,6 +145,11 @@ else
             </div>
         </div>
     }
+
+    <EntityDetailsPanel Participant="selectedParticipant"
+                         OnClose="() => selectedParticipant = null"
+                         OnRemoveCondition="(string c) => ToggleCondition(selectedParticipant!, c)"
+                         OnAddCondition="(string c) => ToggleCondition(selectedParticipant!, c)" />
 }
 
 @code {
@@ -155,6 +160,7 @@ else
     private List<PlayerCharacter> characters = [];
     private List<StatBlock> statBlocks = [];
     private bool loaded;
+    private EncounterParticipant? selectedParticipant;
 
     private int selectedCharacterId;
     private int characterInitiative = 10;
@@ -176,7 +182,14 @@ else
     {
         encounter = await EncounterService.GetByIdAsync(Id);
         loaded = true;
+
+        // Keep the open panel showing live data (HP/conditions can change from the table too),
+        // and close it quietly if its participant was removed from the encounter.
+        if (selectedParticipant is not null)
+            selectedParticipant = encounter?.Participants.FirstOrDefault(p => p.Id == selectedParticipant.Id);
     }
+
+    private void SelectParticipant(EncounterParticipant p) => selectedParticipant = p;
 
     private IEnumerable<EncounterParticipant> OrderedParticipants() =>
         encounter!.Status == EncounterStatus.Planned

@@ -1,0 +1,20 @@
+@using DMA.Domain.Constants
+
+<span class="condition-badge-wrap">
+    <span class="badge bg-info text-dark me-1 mb-1 @(Removable ? "condition-badge-removable" : "")"
+          role="@(Removable ? "button" : null)" @onclick="HandleClick">
+        @Dnd5eConditions.NameRu(Key)@(Removable ? " ×" : "")
+    </span>
+    <div class="condition-tooltip">
+        <div class="condition-tooltip-title">@Dnd5eConditions.NameRu(Key)</div>
+        <div class="condition-tooltip-body">@Dnd5eConditions.DescriptionRu(Key)</div>
+    </div>
+</span>
+
+@code {
+    [Parameter, EditorRequired] public string Key { get; set; } = string.Empty;
+    [Parameter] public bool Removable { get; set; }
+    [Parameter] public EventCallback OnRemove { get; set; }
+
+    private Task HandleClick() => Removable ? OnRemove.InvokeAsync() : Task.CompletedTask;
+}

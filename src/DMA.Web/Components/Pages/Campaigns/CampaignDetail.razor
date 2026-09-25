@@ -4,6 +4,7 @@
 @using DMA.Application.Sessions
 @using DMA.Application.Characters
 @using DMA.Application.Encounters
+@using DMA.Application.Stories
 @using DMA.Domain.Constants
 @using DMA.Domain.Entities
 @using DMA.Domain.Enums
@@ -11,6 +12,8 @@
 @inject SessionService SessionService
 @inject PlayerCharacterService CharacterService
 @inject EncounterService EncounterService
+@inject StoryService StoryService
+@inject CampaignStoryService CampaignStoryService
 @inject NavigationManager Nav
 
 <PageTitle>@(campaign?.Name ?? "Кампания")</PageTitle>
@@ -43,6 +46,38 @@ else
             </div>
             <button type="submit" class="btn btn-primary btn-sm mt-3">Сохранить</button>
         </EditForm>
+    </div>
+
+    <div class="section-card">
+        <h2>Сюжет</h2>
+        @if (campaign.SourceStoryId is null)
+        {
+            <p class="text-secondary small">К этой кампании ещё не привязан сюжет.</p>
+            @if (availableStories.Count == 0)
+            {
+                <p class="text-muted">Сначала создайте сюжет в разделе "Сюжеты".</p>
+            }
+            else
+            {
+                <div class="d-flex gap-2">
+                    <select class="form-select" style="max-width:300px"
+                            @onchange="@(e => selectedStoryIdToAttach = int.TryParse(e.Value?.ToString(), out var v) ? v : null)">
+                        <option value="">Выберите сюжет...</option>
+                        @foreach (var s in availableStories)
+                        {
+                            <option value="@s.Id">@s.Name</option>
+                        }
+                    </select>
+                    <button class="btn btn-success text-nowrap" disabled="@(selectedStoryIdToAttach is null)" @onclick="AttachStory">Привязать</button>
+                </div>
+            }
+        }
+        else
+        {
+            <p>Привязан сюжет: <strong>@attachedStory?.Name</strong></p>
+            <a class="btn btn-outline-primary btn-sm" href="@($"/campaigns/{Id}/story")">Открыть дерево сюжета</a>
+            <button class="btn btn-outline-danger btn-sm" @onclick="DetachStory">Отвязать</button>
+        }
     </div>
 
     <div class="section-card">
@@ -111,13 +146,13 @@ else
                             <div>
                                 @foreach (var c in pc.Conditions)
                                 {
-                                    <span class="badge bg-info text-dark me-1 mb-1" role="button" @onclick="() => ToggleCondition(pc, c)">@c &times;</span>
+                                    <ConditionBadge Key="@c" Removable="true" OnRemove="() => ToggleCondition(pc, c)" />
                                 }
                                 <select class="form-select form-select-sm d-inline-block w-auto" @onchange="@(e => AddCondition(pc, e.Value?.ToString()))">
                                     <option value="">+ состояние</option>
                                     @foreach (var c in Dnd5eConditions.All.Where(c => !pc.Conditions.Contains(c)))
                                     {
-                                        <option value="@c">@c</option>
+                                        <option value="@c">@Dnd5eConditions.NameRu(c)</option>
                                     }
                                 </select>
                             </div>
@@ -161,6 +196,9 @@ else
     private List<Session> sessions = [];
     private List<PlayerCharacter> characters = [];
     private List<Encounter> encounters = [];
+    private List<Story> availableStories = [];
+    private Story? attachedStory;
+    private int? selectedStoryIdToAttach;
     private TextModel newSessionTitle = new();
     private TextModel newEncounterName = new();
     private bool loaded;
@@ -178,7 +216,28 @@ else
         sessions = await SessionService.GetByCampaignAsync(Id);
         characters = await CharacterService.GetByCampaignAsync(Id);
         encounters = await EncounterService.GetByCampaignAsync(Id);
+
+        attachedStory = campaign.SourceStoryId is int storyId ? await StoryService.GetByIdAsync(storyId) : null;
+        if (campaign.SourceStoryId is null)
+            availableStories = await StoryService.GetAllAsync();
+
         loaded = true;
+    }
+
+    private async Task AttachStory()
+    {
+        if (selectedStoryIdToAttach is int storyId)
+        {
+            await CampaignStoryService.AttachStoryAsync(Id, storyId);
+            selectedStoryIdToAttach = null;
+            await LoadAsync();
+        }
+    }
+
+    private async Task DetachStory()
+    {
+        await CampaignStoryService.DetachStoryAsync(Id);
+        await LoadAsync();
     }
 
     private async Task SaveCampaign()

@@ -10,6 +10,8 @@ public class PlayerCharacterServiceTests
 {
     private class NoOpFileStorageService : IFileStorageService
     {
+        public string RootPath => string.Empty;
+
         public Task<string> SaveAsync(Stream content, string originalFileName, CancellationToken ct = default) =>
             Task.FromResult("unused.png");
 

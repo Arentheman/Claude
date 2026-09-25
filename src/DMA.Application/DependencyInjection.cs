@@ -3,6 +3,7 @@ using DMA.Application.Campaigns;
 using DMA.Application.Characters;
 using DMA.Application.Encounters;
 using DMA.Application.Sessions;
+using DMA.Application.Stories;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace DMA.Application;
@@ -16,6 +17,8 @@ public static class DependencyInjection
         services.AddScoped<PlayerCharacterService>();
         services.AddScoped<StatBlockService>();
         services.AddScoped<EncounterService>();
+        services.AddScoped<StoryService>();
+        services.AddScoped<CampaignStoryService>();
         return services;
     }
 }

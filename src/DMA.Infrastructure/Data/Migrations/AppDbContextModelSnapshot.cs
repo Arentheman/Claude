@@ -36,12 +36,64 @@ namespace DMA.Infrastructure.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("SourceStoryId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("Status")
                         .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
 
+                    b.HasIndex("SourceStoryId");
+
                     b.ToTable("Campaigns");
+                });
+
+            modelBuilder.Entity("DMA.Domain.Entities.CampaignStoryNode", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("CampaignId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(20000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("ParentNodeId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PlannedLoot")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("SourceStoryNodeId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CampaignId");
+
+                    b.HasIndex("ParentNodeId");
+
+                    b.HasIndex("SourceStoryNodeId");
+
+                    b.ToTable("CampaignStoryNodes");
                 });
 
             modelBuilder.Entity("DMA.Domain.Entities.CharacterAttachment", b =>
@@ -377,6 +429,102 @@ namespace DMA.Infrastructure.Data.Migrations
                     b.ToTable("StatBlocks");
                 });
 
+            modelBuilder.Entity("DMA.Domain.Entities.Story", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Stories");
+                });
+
+            modelBuilder.Entity("DMA.Domain.Entities.StoryNode", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(20000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("ParentNodeId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PlannedLoot")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("StoryId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ParentNodeId");
+
+                    b.HasIndex("StoryId");
+
+                    b.ToTable("StoryNodes");
+                });
+
+            modelBuilder.Entity("DMA.Domain.Entities.Campaign", b =>
+                {
+                    b.HasOne("DMA.Domain.Entities.Story", "SourceStory")
+                        .WithMany()
+                        .HasForeignKey("SourceStoryId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("SourceStory");
+                });
+
+            modelBuilder.Entity("DMA.Domain.Entities.CampaignStoryNode", b =>
+                {
+                    b.HasOne("DMA.Domain.Entities.Campaign", "Campaign")
+                        .WithMany("StoryNodes")
+                        .HasForeignKey("CampaignId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("DMA.Domain.Entities.CampaignStoryNode", "ParentNode")
+                        .WithMany("Children")
+                        .HasForeignKey("ParentNodeId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("DMA.Domain.Entities.StoryNode", null)
+                        .WithMany()
+                        .HasForeignKey("SourceStoryNodeId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Campaign");
+
+                    b.Navigation("ParentNode");
+                });
+
             modelBuilder.Entity("DMA.Domain.Entities.CharacterAttachment", b =>
                 {
                     b.HasOne("DMA.Domain.Entities.PlayerCharacter", "PlayerCharacter")
@@ -580,6 +728,24 @@ namespace DMA.Infrastructure.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("DMA.Domain.Entities.StoryNode", b =>
+                {
+                    b.HasOne("DMA.Domain.Entities.StoryNode", "ParentNode")
+                        .WithMany("Children")
+                        .HasForeignKey("ParentNodeId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("DMA.Domain.Entities.Story", "Story")
+                        .WithMany("Nodes")
+                        .HasForeignKey("StoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ParentNode");
+
+                    b.Navigation("Story");
+                });
+
             modelBuilder.Entity("DMA.Domain.Entities.Campaign", b =>
                 {
                     b.Navigation("Encounters");
@@ -587,6 +753,13 @@ namespace DMA.Infrastructure.Data.Migrations
                     b.Navigation("PlayerCharacters");
 
                     b.Navigation("Sessions");
+
+                    b.Navigation("StoryNodes");
+                });
+
+            modelBuilder.Entity("DMA.Domain.Entities.CampaignStoryNode", b =>
+                {
+                    b.Navigation("Children");
                 });
 
             modelBuilder.Entity("DMA.Domain.Entities.Encounter", b =>
@@ -601,6 +774,16 @@ namespace DMA.Infrastructure.Data.Migrations
                     b.Navigation("Features");
 
                     b.Navigation("Inventory");
+                });
+
+            modelBuilder.Entity("DMA.Domain.Entities.Story", b =>
+                {
+                    b.Navigation("Nodes");
+                });
+
+            modelBuilder.Entity("DMA.Domain.Entities.StoryNode", b =>
+                {
+                    b.Navigation("Children");
                 });
 #pragma warning restore 612, 618
         }
