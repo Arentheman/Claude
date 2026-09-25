@@ -216,3 +216,165 @@ h1:focus {
     min-height: 8rem;
     resize: vertical;
 }
+
+/* Condition badge + hover rules tooltip. A custom styled popover rather than the native
+   `title` tooltip, so it matches the app's card look and works in both themes. */
+.condition-badge-wrap {
+    position: relative;
+    display: inline-block;
+}
+
+.condition-tooltip {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 0.4rem);
+    left: 0;
+    z-index: 1050;
+    width: max-content;
+    max-width: 360px;
+    background-color: var(--bs-body-bg);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.5rem;
+    box-shadow: 0 0.5rem 1.25rem rgba(0, 0, 0, 0.25);
+    padding: 0.75rem 0.9rem;
+    text-align: left;
+    white-space: normal;
+}
+
+.condition-badge-wrap:hover .condition-tooltip {
+    display: block;
+}
+
+.condition-tooltip-title {
+    font-weight: 600;
+    margin-bottom: 0.35rem;
+}
+
+.condition-tooltip-body {
+    font-size: 0.85rem;
+    white-space: pre-line;
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+/* Encounter tracker: slide-in entity reference drawer. Non-modal on purpose — the DM keeps
+   editing HP/conditions in the table underneath while this stays open for reference. */
+.entity-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(34vw, 460px);
+    min-width: 340px;
+    background-color: var(--bs-body-bg);
+    border-left: 1px solid var(--bs-border-color);
+    box-shadow: -0.5rem 0 1.5rem rgba(0, 0, 0, 0.2);
+    z-index: 1040;
+    display: flex;
+    flex-direction: column;
+    transition: width 0.2s ease, min-width 0.2s ease;
+}
+
+.entity-panel.entity-panel-collapsed {
+    width: 2.75rem;
+    min-width: 2.75rem;
+}
+
+.entity-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--bs-border-color);
+}
+
+.entity-panel-header-actions {
+    display: flex;
+    gap: 0.35rem;
+    flex-shrink: 0;
+}
+
+.entity-panel-collapsed-label {
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    margin: 0.5rem auto;
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--bs-secondary-color);
+}
+
+.entity-panel-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem;
+}
+
+.entity-panel-vitals {
+    display: flex;
+    gap: 1rem;
+}
+
+.entity-vital-box {
+    flex: 1;
+    background-color: var(--bs-tertiary-bg);
+    border-radius: 0.5rem;
+    padding: 0.5rem 0.75rem;
+}
+
+.entity-vital-label {
+    font-size: 0.75rem;
+    color: var(--bs-secondary-color);
+}
+
+.entity-vital-value {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+}
+
+.entity-ability-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 0.4rem;
+}
+
+.entity-ability-box {
+    background-color: var(--bs-tertiary-bg);
+    border-radius: 0.4rem;
+    padding: 0.4rem 0.2rem;
+    text-align: center;
+}
+
+.entity-ability-label {
+    font-size: 0.7rem;
+    color: var(--bs-secondary-color);
+}
+
+.entity-ability-score {
+    font-weight: 600;
+}
+
+.entity-ability-mod {
+    font-size: 0.8rem;
+    color: var(--bs-secondary-color);
+}
+
+.entity-panel-list {
+    padding-left: 1.1rem;
+    margin-bottom: 0;
+}
+
+.entity-panel-notes {
+    white-space: pre-line;
+    font-size: 0.9rem;
+}
+
+.entity-name-link {
+    cursor: pointer;
+    text-decoration: underline dotted;
+}
+
+.entity-name-link:hover {
+    color: var(--bs-primary);
+}

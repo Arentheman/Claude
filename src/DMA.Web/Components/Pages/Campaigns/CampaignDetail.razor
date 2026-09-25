@@ -146,13 +146,13 @@ else
                             <div>
                                 @foreach (var c in pc.Conditions)
                                 {
-                                    <span class="badge bg-info text-dark me-1 mb-1" role="button" @onclick="() => ToggleCondition(pc, c)">@c &times;</span>
+                                    <ConditionBadge Key="@c" Removable="true" OnRemove="() => ToggleCondition(pc, c)" />
                                 }
                                 <select class="form-select form-select-sm d-inline-block w-auto" @onchange="@(e => AddCondition(pc, e.Value?.ToString()))">
                                     <option value="">+ состояние</option>
                                     @foreach (var c in Dnd5eConditions.All.Where(c => !pc.Conditions.Contains(c)))
                                     {
-                                        <option value="@c">@c</option>
+                                        <option value="@c">@Dnd5eConditions.NameRu(c)</option>
                                     }
                                 </select>
                             </div>
