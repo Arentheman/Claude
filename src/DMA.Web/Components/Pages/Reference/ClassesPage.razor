@@ -1,0 +1,180 @@
+@page "/reference/classes"
+@rendermode InteractiveServer
+@using DMA.Application.Common.Interfaces
+@using DMA.Domain.Reference
+@inject IReferenceDataService ReferenceData
+
+<PageTitle>Классы — Справочник</PageTitle>
+
+<a href="/reference">&larr; К справочнику</a>
+<h1>Классы</h1>
+
+<div class="row g-3">
+    <div class="col-md-3">
+        <div class="section-card">
+            @foreach (var c in classes)
+            {
+                <div class="story-tree-row @(c.Id == selectedId ? "story-tree-row-selected" : "")" @onclick="() => Select(c.Id)">
+                    <span>@c.Name</span>
+                </div>
+            }
+        </div>
+    </div>
+    <div class="col-md-9">
+        <div class="section-card">
+            @if (selected is null)
+            {
+                <p class="text-secondary">Выберите класс слева.</p>
+            }
+            else
+            {
+                <h3>@selected.Name</h3>
+                <p class="text-secondary small mb-3">
+                    Кость Хитов: @selected.HitDie &middot;
+                    Основные характеристики: @string.Join(", ", selected.PrimaryAbilities) &middot;
+                    Спасброски: @string.Join(", ", selected.SavingThrows)
+                </p>
+
+                <dl class="row small">
+                    @if (selected.ArmorProficiencies.Count > 0)
+                    {
+                        <dt class="col-sm-3">Доспехи</dt>
+                        <dd class="col-sm-9">@string.Join(", ", selected.ArmorProficiencies)</dd>
+                    }
+                    @if (selected.WeaponProficiencies.Count > 0)
+                    {
+                        <dt class="col-sm-3">Оружие</dt>
+                        <dd class="col-sm-9">@string.Join(", ", selected.WeaponProficiencies)</dd>
+                    }
+                    @if (selected.ToolProficiencies.Count > 0)
+                    {
+                        <dt class="col-sm-3">Инструменты</dt>
+                        <dd class="col-sm-9">@string.Join(", ", selected.ToolProficiencies)</dd>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(selected.SkillProficiencies))
+                    {
+                        <dt class="col-sm-3">Навыки</dt>
+                        <dd class="col-sm-9">@selected.SkillProficiencies</dd>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(selected.StartingEquipment))
+                    {
+                        <dt class="col-sm-3">Снаряжение</dt>
+                        <dd class="col-sm-9">@selected.StartingEquipment</dd>
+                    }
+                </dl>
+
+                @foreach (var table in selected.Tables)
+                {
+                    @if (!string.IsNullOrWhiteSpace(table.Title))
+                    {
+                        <h6>@table.Title</h6>
+                    }
+                    <div class="table-responsive mb-3">
+                        <table class="table table-sm table-bordered">
+                            <thead>
+                                <tr>
+                                    @foreach (var col in table.Columns)
+                                    {
+                                        <th>@col</th>
+                                    }
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in table.Rows)
+                                {
+                                    <tr>
+                                        @foreach (var cell in row)
+                                        {
+                                            <td>@cell</td>
+                                        }
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+
+                @if (selected.Features.Count > 0)
+                {
+                    <h5>Умения класса</h5>
+                    @foreach (var f in selected.Features.OrderBy(f => f.Level))
+                    {
+                        <p><strong>@f.Level ур. &mdash; @f.Name.</strong> @f.Description</p>
+                    }
+                }
+
+                @if (selected.Subclasses.Count > 0)
+                {
+                    <h5 class="mt-4">Архетипы</h5>
+                    @foreach (var sub in selected.Subclasses)
+                    {
+                        <div class="card mb-3">
+                            <div class="card-body">
+                                <h6 class="card-title">@sub.Name <span class="text-secondary small">(с @sub.UnlockLevel ур.)</span></h6>
+                                @if (!string.IsNullOrWhiteSpace(sub.Description))
+                                {
+                                    <p class="card-text">@sub.Description</p>
+                                }
+                                @foreach (var table in sub.Tables)
+                                {
+                                    @if (!string.IsNullOrWhiteSpace(table.Title))
+                                    {
+                                        <h6>@table.Title</h6>
+                                    }
+                                    <div class="table-responsive mb-2">
+                                        <table class="table table-sm table-bordered">
+                                            <thead>
+                                                <tr>
+                                                    @foreach (var col in table.Columns)
+                                                    {
+                                                        <th>@col</th>
+                                                    }
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var row in table.Rows)
+                                                {
+                                                    <tr>
+                                                        @foreach (var cell in row)
+                                                        {
+                                                            <td>@cell</td>
+                                                        }
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                }
+                                @foreach (var f in sub.Features.OrderBy(f => f.Level))
+                                {
+                                    <p><strong>@f.Level ур. &mdash; @f.Name.</strong> @f.Description</p>
+                                }
+                            </div>
+                        </div>
+                    }
+                }
+
+                @if (!string.IsNullOrWhiteSpace(selected.Multiclassing))
+                {
+                    <h5 class="mt-4">Мультиклассирование</h5>
+                    <p>@selected.Multiclassing</p>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<CharacterClass> classes = [];
+    private string? selectedId;
+    private CharacterClass? selected;
+
+    protected override void OnInitialized() =>
+        classes = ReferenceData.GetClasses().OrderBy(c => c.Name).ToList();
+
+    private void Select(string id)
+    {
+        selectedId = id;
+        selected = ReferenceData.GetClass(id);
+    }
+}

@@ -32,4 +32,17 @@ public interface IReferenceDataService
 
     IReadOnlyList<MagicItem> GetMagicItems();
     IReadOnlyList<MagicItem> SearchMagicItems(string query);
+
+    IReadOnlyList<CharacterClass> GetClasses();
+    CharacterClass? GetClass(string id);
+
+    IReadOnlyList<Species> GetSpecies();
+    IReadOnlyList<Background> GetBackgrounds();
+
+    IReadOnlyList<RuleSectionNode> GetSpellRuleTree();
+    RuleSection? GetSpellRuleSection(string id);
+    IReadOnlyList<RuleSection> SearchSpellRules(string query);
+
+    IReadOnlyList<Spell> GetSpells();
+    IReadOnlyList<Spell> SearchSpells(string query);
 }

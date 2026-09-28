@@ -28,6 +28,12 @@ public sealed class ReferenceDataService : IReferenceDataService
     private readonly IReadOnlyList<RuleSection> _magicItemRuleSections;
     private readonly IReadOnlyList<RuleSectionNode> _magicItemRuleTree;
     private readonly IReadOnlyList<MagicItem> _magicItems;
+    private readonly IReadOnlyList<CharacterClass> _classes;
+    private readonly IReadOnlyList<Species> _species;
+    private readonly IReadOnlyList<Background> _backgrounds;
+    private readonly IReadOnlyList<RuleSection> _spellRuleSections;
+    private readonly IReadOnlyList<RuleSectionNode> _spellRuleTree;
+    private readonly IReadOnlyList<Spell> _spells;
 
     public ReferenceDataService()
     {
@@ -57,6 +63,37 @@ public sealed class ReferenceDataService : IReferenceDataService
         _magicItems = LoadEmbedded<MagicItemDto>("magic-items.json")
             .Select(d => new MagicItem(d.Id, d.Name, d.Type, d.Rarity, d.RequiresAttunement,
                 d.AttunementNote, d.Description, ToReferenceTables(d.Tables)))
+            .ToList();
+
+        _classes = LoadEmbedded<CharacterClassDto>("classes.json")
+            .Select(d => new CharacterClass(d.Id, d.Name, d.HitDie, d.PrimaryAbilities, d.SavingThrows,
+                d.ArmorProficiencies, d.WeaponProficiencies, d.ToolProficiencies, d.SkillProficiencies,
+                d.StartingEquipment, ToReferenceTables(d.Tables),
+                (d.Features ?? []).Select(f => new ClassFeature(f.Level, f.Name, f.Description)).ToList(),
+                (d.Subclasses ?? []).Select(s => new Subclass(s.Id, s.Name, s.UnlockLevel, s.Description,
+                    (s.Features ?? []).Select(f => new ClassFeature(f.Level, f.Name, f.Description)).ToList(),
+                    ToReferenceTables(s.Tables))).ToList(),
+                d.Multiclassing))
+            .ToList();
+
+        _species = LoadEmbedded<SpeciesDto>("species.json")
+            .Select(d => new Species(d.Id, d.Name, d.CreatureType, d.Size, d.Speed, d.Description,
+                (d.Traits ?? []).Select(t => new SpeciesTrait(t.Name, t.Description)).ToList(),
+                ToReferenceTables(d.Tables)))
+            .ToList();
+
+        _backgrounds = LoadEmbedded<BackgroundDto>("backgrounds.json")
+            .Select(d => new Background(d.Id, d.Name, d.AbilityScores, d.Feat, d.SkillProficiencies,
+                d.ToolProficiency, d.Equipment))
+            .ToList();
+
+        _spellRuleSections = LoadRuleSections("spell-rules.json");
+        _spellRuleTree = BuildRuleTree(_spellRuleSections);
+
+        _spells = LoadEmbedded<SpellDto>("spells.json")
+            .Select(d => new Spell(d.Id, d.Name, d.Level, d.School, d.Classes, d.CastingTime, d.Range,
+                d.Components, d.Duration, d.Ritual, d.Concentration, d.Description, d.AtHigherLevels,
+                ToReferenceTables(d.Tables)))
             .ToList();
     }
 
@@ -143,6 +180,36 @@ public sealed class ReferenceDataService : IReferenceDataService
         if (string.IsNullOrWhiteSpace(query)) return _magicItems;
         return _magicItems
             .Where(m => Matches(m.Name, query) || Matches(m.Description, query))
+            .ToList();
+    }
+
+    public IReadOnlyList<CharacterClass> GetClasses() => _classes;
+
+    public CharacterClass? GetClass(string id) => _classes.FirstOrDefault(c => c.Id == id);
+
+    public IReadOnlyList<Species> GetSpecies() => _species;
+
+    public IReadOnlyList<Background> GetBackgrounds() => _backgrounds;
+
+    public IReadOnlyList<RuleSectionNode> GetSpellRuleTree() => _spellRuleTree;
+
+    public RuleSection? GetSpellRuleSection(string id) => _spellRuleSections.FirstOrDefault(s => s.Id == id);
+
+    public IReadOnlyList<RuleSection> SearchSpellRules(string query)
+    {
+        if (string.IsNullOrWhiteSpace(query)) return [];
+        return _spellRuleSections
+            .Where(s => Matches(s.Title, query) || Matches(s.Content, query))
+            .ToList();
+    }
+
+    public IReadOnlyList<Spell> GetSpells() => _spells;
+
+    public IReadOnlyList<Spell> SearchSpells(string query)
+    {
+        if (string.IsNullOrWhiteSpace(query)) return _spells;
+        return _spells
+            .Where(s => Matches(s.Name, query) || Matches(s.Description, query))
             .ToList();
     }
 
@@ -240,6 +307,88 @@ public sealed class ReferenceDataService : IReferenceDataService
         public bool RequiresAttunement { get; set; }
         public string? AttunementNote { get; set; }
         public string Description { get; set; } = "";
+        public List<TableDto>? Tables { get; set; }
+    }
+
+    private sealed class ClassFeatureDto
+    {
+        public int Level { get; set; }
+        public string Name { get; set; } = "";
+        public string Description { get; set; } = "";
+    }
+
+    private sealed class SubclassDto
+    {
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
+        public int UnlockLevel { get; set; }
+        public string Description { get; set; } = "";
+        public List<ClassFeatureDto>? Features { get; set; }
+        public List<TableDto>? Tables { get; set; }
+    }
+
+    private sealed class CharacterClassDto
+    {
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string HitDie { get; set; } = "";
+        public List<string> PrimaryAbilities { get; set; } = [];
+        public List<string> SavingThrows { get; set; } = [];
+        public List<string> ArmorProficiencies { get; set; } = [];
+        public List<string> WeaponProficiencies { get; set; } = [];
+        public List<string> ToolProficiencies { get; set; } = [];
+        public string SkillProficiencies { get; set; } = "";
+        public string StartingEquipment { get; set; } = "";
+        public List<TableDto>? Tables { get; set; }
+        public List<ClassFeatureDto>? Features { get; set; }
+        public List<SubclassDto>? Subclasses { get; set; }
+        public string Multiclassing { get; set; } = "";
+    }
+
+    private sealed class SpeciesTraitDto
+    {
+        public string Name { get; set; } = "";
+        public string Description { get; set; } = "";
+    }
+
+    private sealed class SpeciesDto
+    {
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string CreatureType { get; set; } = "";
+        public string Size { get; set; } = "";
+        public string Speed { get; set; } = "";
+        public string Description { get; set; } = "";
+        public List<SpeciesTraitDto>? Traits { get; set; }
+        public List<TableDto>? Tables { get; set; }
+    }
+
+    private sealed class BackgroundDto
+    {
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
+        public List<string> AbilityScores { get; set; } = [];
+        public string Feat { get; set; } = "";
+        public List<string> SkillProficiencies { get; set; } = [];
+        public string ToolProficiency { get; set; } = "";
+        public string Equipment { get; set; } = "";
+    }
+
+    private sealed class SpellDto
+    {
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
+        public int Level { get; set; }
+        public string School { get; set; } = "";
+        public List<string> Classes { get; set; } = [];
+        public string CastingTime { get; set; } = "";
+        public string Range { get; set; } = "";
+        public string Components { get; set; } = "";
+        public string Duration { get; set; } = "";
+        public bool Ritual { get; set; }
+        public bool Concentration { get; set; }
+        public string Description { get; set; } = "";
+        public string? AtHigherLevels { get; set; }
         public List<TableDto>? Tables { get; set; }
     }
 }

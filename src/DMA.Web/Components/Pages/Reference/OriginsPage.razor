@@ -1,0 +1,121 @@
+@page "/reference/origins"
+@rendermode InteractiveServer
+@using DMA.Application.Common.Interfaces
+@using DMA.Domain.Reference
+@inject IReferenceDataService ReferenceData
+
+<PageTitle>Происхождения — Справочник</PageTitle>
+
+<a href="/reference">&larr; К справочнику</a>
+<h1>Происхождения</h1>
+
+<h4 class="mt-4">Виды</h4>
+<div class="row g-3 mb-3">
+    <div class="col-md-3">
+        <div class="section-card">
+            @foreach (var s in species)
+            {
+                <div class="story-tree-row @(s.Id == selectedSpeciesId ? "story-tree-row-selected" : "")" @onclick="() => SelectSpecies(s.Id)">
+                    <span>@s.Name</span>
+                </div>
+            }
+        </div>
+    </div>
+    <div class="col-md-9">
+        <div class="section-card">
+            @if (selectedSpecies is null)
+            {
+                <p class="text-secondary">Выберите вид слева.</p>
+            }
+            else
+            {
+                <h4>@selectedSpecies.Name</h4>
+                <p class="text-secondary small mb-2">
+                    @selectedSpecies.CreatureType &middot; Размер: @selectedSpecies.Size &middot; Скорость: @selectedSpecies.Speed
+                </p>
+                @if (!string.IsNullOrWhiteSpace(selectedSpecies.Description))
+                {
+                    <p>@selectedSpecies.Description</p>
+                }
+                @foreach (var t in selectedSpecies.Traits)
+                {
+                    <p><strong>@t.Name.</strong> @t.Description</p>
+                }
+                @foreach (var table in selectedSpecies.Tables)
+                {
+                    @if (!string.IsNullOrWhiteSpace(table.Title))
+                    {
+                        <h6>@table.Title</h6>
+                    }
+                    <div class="table-responsive mb-3">
+                        <table class="table table-sm table-bordered">
+                            <thead>
+                                <tr>
+                                    @foreach (var col in table.Columns)
+                                    {
+                                        <th>@col</th>
+                                    }
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in table.Rows)
+                                {
+                                    <tr>
+                                        @foreach (var cell in row)
+                                        {
+                                            <td>@cell</td>
+                                        }
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+<h4>Предыстории</h4>
+<div class="row g-3">
+    @foreach (var b in backgrounds)
+    {
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">@b.Name</h5>
+                    <p class="text-secondary small mb-1">Характеристики: @string.Join(", ", b.AbilityScores)</p>
+                    <p class="small mb-1"><strong>Черта:</strong> @b.Feat</p>
+                    <p class="small mb-1"><strong>Навыки:</strong> @string.Join(", ", b.SkillProficiencies)</p>
+                    @if (!string.IsNullOrWhiteSpace(b.ToolProficiency))
+                    {
+                        <p class="small mb-1"><strong>Инструмент:</strong> @b.ToolProficiency</p>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(b.Equipment))
+                    {
+                        <p class="small mb-0"><strong>Снаряжение:</strong> @b.Equipment</p>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Species> species = [];
+    private List<Background> backgrounds = [];
+    private string? selectedSpeciesId;
+    private Species? selectedSpecies;
+
+    protected override void OnInitialized()
+    {
+        species = ReferenceData.GetSpecies().OrderBy(s => s.Name).ToList();
+        backgrounds = ReferenceData.GetBackgrounds().OrderBy(b => b.Name).ToList();
+    }
+
+    private void SelectSpecies(string id)
+    {
+        selectedSpeciesId = id;
+        selectedSpecies = species.FirstOrDefault(s => s.Id == id);
+    }
+}

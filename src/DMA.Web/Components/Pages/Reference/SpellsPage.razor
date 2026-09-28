@@ -1,0 +1,233 @@
+@page "/reference/spells"
+@rendermode InteractiveServer
+@using DMA.Application.Common.Interfaces
+@using DMA.Domain.Reference
+@inject IReferenceDataService ReferenceData
+
+<PageTitle>Заклинания — Справочник</PageTitle>
+
+<a href="/reference">&larr; К справочнику</a>
+<h1>Заклинания</h1>
+
+<h4 class="mt-4">Правила</h4>
+<div class="mb-3">
+    <input class="form-control" placeholder="Поиск по правилам..." @bind="ruleQuery" @bind:event="oninput" />
+</div>
+
+<div class="row g-3 mb-5">
+    <div class="col-md-4">
+        <div class="section-card">
+            @if (!string.IsNullOrWhiteSpace(ruleQuery))
+            {
+                var results = ReferenceData.SearchSpellRules(ruleQuery);
+                @if (results.Count == 0)
+                {
+                    <p class="text-secondary small">Ничего не найдено.</p>
+                }
+                else
+                {
+                    @foreach (var hit in results)
+                    {
+                        <div class="story-tree-row @(hit.Id == selectedRuleId ? "story-tree-row-selected" : "")" @onclick="() => SelectRule(hit.Id)">
+                            <span>@hit.Title</span>
+                        </div>
+                    }
+                }
+            }
+            else
+            {
+                @foreach (var root in ruleTree)
+                {
+                    <RuleOutlineNode Node="root" SelectedId="selectedRuleId" OnSelect="SelectRule" />
+                }
+            }
+        </div>
+    </div>
+    <div class="col-md-8">
+        <div class="section-card">
+            @if (selectedRule is null)
+            {
+                <p class="text-secondary">Выберите раздел слева.</p>
+            }
+            else
+            {
+                <h4>@selectedRule.Title</h4>
+                @foreach (var paragraph in selectedRule.Content.Split("\n\n", StringSplitOptions.RemoveEmptyEntries))
+                {
+                    <p>@paragraph</p>
+                }
+                @foreach (var table in selectedRule.Tables)
+                {
+                    @if (!string.IsNullOrWhiteSpace(table.Title))
+                    {
+                        <h6>@table.Title</h6>
+                    }
+                    <div class="table-responsive mb-3">
+                        <table class="table table-sm table-bordered">
+                            <thead>
+                                <tr>
+                                    @foreach (var col in table.Columns)
+                                    {
+                                        <th>@col</th>
+                                    }
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in table.Rows)
+                                {
+                                    <tr>
+                                        @foreach (var cell in row)
+                                        {
+                                            <td>@cell</td>
+                                        }
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+<h4>Каталог заклинаний</h4>
+<div class="row g-2 mb-3">
+    <div class="col-md-5">
+        <input class="form-control" placeholder="Поиск по названию или описанию..." @bind="spellQuery" @bind:event="oninput" />
+    </div>
+    <div class="col-md-3">
+        <select class="form-select" @bind="levelFilter">
+            <option value="">Любой уровень</option>
+            @foreach (var level in levels)
+            {
+                <option value="@level">@(level == 0 ? "Заговор" : $"{level} уровень")</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-4">
+        <select class="form-select" @bind="classFilter">
+            <option value="">Любой класс</option>
+            @foreach (var cls in classNames)
+            {
+                <option value="@cls">@cls</option>
+            }
+        </select>
+    </div>
+</div>
+
+<p class="text-secondary small">Найдено: @FilteredSpells.Count из @allSpells.Count</p>
+
+@if (FilteredSpells.Count == 0)
+{
+    <p class="text-secondary">Ничего не найдено.</p>
+}
+else
+{
+    <div class="row g-3">
+        @foreach (var spell in FilteredSpells)
+        {
+            <div class="col-md-6">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h5 class="card-title">@spell.Name</h5>
+                        <p class="text-secondary small mb-1">
+                            @(spell.Level == 0 ? "Заговор" : $"{spell.Level} уровень"), @spell.School (@string.Join(", ", spell.Classes))
+                            @if (spell.Ritual)
+                            {
+                                <text> &middot; Ритуал</text>
+                            }
+                        </p>
+                        <p class="small mb-1">
+                            <strong>Время:</strong> @spell.CastingTime &middot;
+                            <strong>Дистанция:</strong> @spell.Range
+                        </p>
+                        <p class="small mb-2">
+                            <strong>Компоненты:</strong> @spell.Components &middot;
+                            <strong>Длительность:</strong> @spell.Duration
+                            @if (spell.Concentration)
+                            {
+                                <text> (Концентрация)</text>
+                            }
+                        </p>
+                        @foreach (var paragraph in spell.Description.Split("\n\n", StringSplitOptions.RemoveEmptyEntries))
+                        {
+                            <p class="card-text">@paragraph</p>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(spell.AtHigherLevels))
+                        {
+                            <p class="card-text small"><strong>На более высоких уровнях.</strong> @spell.AtHigherLevels</p>
+                        }
+                        @foreach (var table in spell.Tables)
+                        {
+                            @if (!string.IsNullOrWhiteSpace(table.Title))
+                            {
+                                <h6>@table.Title</h6>
+                            }
+                            <div class="table-responsive mb-2">
+                                <table class="table table-sm table-bordered">
+                                    <thead>
+                                        <tr>
+                                            @foreach (var col in table.Columns)
+                                            {
+                                                <th>@col</th>
+                                            }
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var row in table.Rows)
+                                        {
+                                            <tr>
+                                                @foreach (var cell in row)
+                                                {
+                                                    <td>@cell</td>
+                                                }
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private IReadOnlyList<RuleSectionNode> ruleTree = [];
+    private string? selectedRuleId;
+    private RuleSection? selectedRule;
+    private string ruleQuery = "";
+
+    private List<Spell> allSpells = [];
+    private List<int> levels = [];
+    private List<string> classNames = [];
+    private string spellQuery = "";
+    private string levelFilter = "";
+    private string classFilter = "";
+
+    private List<Spell> FilteredSpells => allSpells
+        .Where(s => string.IsNullOrEmpty(levelFilter) || s.Level.ToString() == levelFilter)
+        .Where(s => string.IsNullOrEmpty(classFilter) || s.Classes.Contains(classFilter))
+        .Where(s => string.IsNullOrWhiteSpace(spellQuery)
+            || s.Name.Contains(spellQuery, StringComparison.InvariantCultureIgnoreCase)
+            || s.Description.Contains(spellQuery, StringComparison.InvariantCultureIgnoreCase))
+        .ToList();
+
+    protected override void OnInitialized()
+    {
+        ruleTree = ReferenceData.GetSpellRuleTree();
+
+        allSpells = ReferenceData.GetSpells().OrderBy(s => s.Level).ThenBy(s => s.Name).ToList();
+        levels = allSpells.Select(s => s.Level).Distinct().OrderBy(l => l).ToList();
+        classNames = allSpells.SelectMany(s => s.Classes).Distinct().OrderBy(c => c).ToList();
+    }
+
+    private void SelectRule(string id)
+    {
+        selectedRuleId = id;
+        selectedRule = ReferenceData.GetSpellRuleSection(id);
+    }
+}
