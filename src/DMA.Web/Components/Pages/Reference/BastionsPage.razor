@@ -1,0 +1,199 @@
+@page "/reference/bastions"
+@rendermode InteractiveServer
+@using DMA.Application.Common.Interfaces
+@using DMA.Domain.Reference
+@inject IReferenceDataService ReferenceData
+
+<PageTitle>Бастионы — Справочник</PageTitle>
+
+<a href="/reference">&larr; К справочнику</a>
+<h1>Бастионы</h1>
+
+<h4 class="mt-4">Правила</h4>
+<div class="mb-3">
+    <input class="form-control" placeholder="Поиск по правилам бастионов..." @bind="ruleQuery" @bind:event="oninput" />
+</div>
+
+<div class="row g-3 mb-5">
+    <div class="col-md-4">
+        <div class="section-card">
+            @if (!string.IsNullOrWhiteSpace(ruleQuery))
+            {
+                var results = ReferenceData.SearchBastionRules(ruleQuery);
+                @if (results.Count == 0)
+                {
+                    <p class="text-secondary small">Ничего не найдено.</p>
+                }
+                else
+                {
+                    @foreach (var hit in results)
+                    {
+                        <div class="story-tree-row @(hit.Id == selectedRuleId ? "story-tree-row-selected" : "")" @onclick="() => SelectRule(hit.Id)">
+                            <span>@hit.Title</span>
+                        </div>
+                    }
+                }
+            }
+            else
+            {
+                @foreach (var root in ruleTree)
+                {
+                    <RuleOutlineNode Node="root" SelectedId="selectedRuleId" OnSelect="SelectRule" />
+                }
+            }
+        </div>
+    </div>
+    <div class="col-md-8">
+        <div class="section-card">
+            @if (selectedRule is null)
+            {
+                <p class="text-secondary">Выберите раздел слева.</p>
+            }
+            else
+            {
+                <h4>@selectedRule.Title</h4>
+                @foreach (var paragraph in selectedRule.Content.Split("\n\n", StringSplitOptions.RemoveEmptyEntries))
+                {
+                    <p>@paragraph</p>
+                }
+                @foreach (var table in selectedRule.Tables)
+                {
+                    @if (!string.IsNullOrWhiteSpace(table.Title))
+                    {
+                        <h6>@table.Title</h6>
+                    }
+                    <div class="table-responsive mb-3">
+                        <table class="table table-sm table-bordered">
+                            <thead>
+                                <tr>
+                                    @foreach (var col in table.Columns)
+                                    {
+                                        <th>@col</th>
+                                    }
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in table.Rows)
+                                {
+                                    <tr>
+                                        @foreach (var cell in row)
+                                        {
+                                            <td>@cell</td>
+                                        }
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+<h4>Сооружения</h4>
+<div class="row g-2 mb-3">
+    <div class="col-md-8">
+        <input class="form-control" placeholder="Поиск по сооружениям..." @bind="facilityQuery" @bind:event="oninput" />
+    </div>
+    <div class="col-md-4">
+        <select class="form-select" @bind="levelFilter">
+            <option value="">Все уровни</option>
+            @foreach (var level in levels)
+            {
+                <option value="@level">@LevelLabel(level)</option>
+            }
+        </select>
+    </div>
+</div>
+
+@if (FilteredFacilities.Count == 0)
+{
+    <p class="text-secondary">Ничего не найдено.</p>
+}
+else
+{
+    <div class="row g-3">
+        @foreach (var facility in FilteredFacilities)
+        {
+            <div class="col-md-6">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h5 class="card-title">@facility.Name</h5>
+                        <p class="text-secondary small mb-1">
+                            @(facility.Kind == "basic" ? "Основное сооружение" : $"Сооружение {facility.Level}-го уровня")
+                            @if (!string.IsNullOrWhiteSpace(facility.Size))
+                            {
+                                <text> &middot; Размер: @facility.Size</text>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(facility.Hirelings))
+                            {
+                                <text> &middot; Наёмники: @facility.Hirelings</text>
+                            }
+                            @if (facility.Orders.Count > 0)
+                            {
+                                <text> &middot; Приказ: @string.Join(", ", facility.Orders)</text>
+                            }
+                        </p>
+                        @if (!string.IsNullOrWhiteSpace(facility.Requirements))
+                        {
+                            <p class="small"><strong>Требования:</strong> @facility.Requirements</p>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(facility.Description))
+                        {
+                            <p class="card-text">@facility.Description</p>
+                        }
+                        @if (facility.Benefits.Count > 0)
+                        {
+                            <ul class="mb-0">
+                                @foreach (var benefit in facility.Benefits)
+                                {
+                                    <li>@benefit</li>
+                                }
+                            </ul>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private IReadOnlyList<RuleSectionNode> ruleTree = [];
+    private string? selectedRuleId;
+    private RuleSection? selectedRule;
+    private string ruleQuery = "";
+
+    private List<BastionFacility> allFacilities = [];
+    private List<int> levels = [];
+    private string facilityQuery = "";
+    private string levelFilter = "";
+
+    private List<BastionFacility> FilteredFacilities => allFacilities
+        .Where(f => string.IsNullOrEmpty(levelFilter) || f.Level?.ToString() == levelFilter)
+        .Where(f => string.IsNullOrWhiteSpace(facilityQuery)
+            || f.Name.Contains(facilityQuery, StringComparison.InvariantCultureIgnoreCase)
+            || f.Description.Contains(facilityQuery, StringComparison.InvariantCultureIgnoreCase)
+            || f.Benefits.Any(b => b.Contains(facilityQuery, StringComparison.InvariantCultureIgnoreCase)))
+        .ToList();
+
+    protected override void OnInitialized()
+    {
+        ruleTree = ReferenceData.GetBastionRuleTree();
+
+        allFacilities = ReferenceData.GetBastionFacilities()
+            .OrderBy(f => f.Level ?? 0)
+            .ThenBy(f => f.Name)
+            .ToList();
+        levels = allFacilities.Where(f => f.Level.HasValue).Select(f => f.Level!.Value).Distinct().OrderBy(l => l).ToList();
+    }
+
+    private void SelectRule(string id)
+    {
+        selectedRuleId = id;
+        selectedRule = ReferenceData.GetBastionRuleSection(id);
+    }
+
+    private static string LevelLabel(int level) => level == 0 ? "Основные" : $"{level} уровень";
+}

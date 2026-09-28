@@ -18,4 +18,11 @@ public interface IReferenceDataService
 
     IReadOnlyList<EquipmentItem> GetEquipment();
     IReadOnlyList<EquipmentItem> SearchEquipment(string query);
+
+    IReadOnlyList<RuleSectionNode> GetBastionRuleTree();
+    RuleSection? GetBastionRuleSection(string id);
+    IReadOnlyList<RuleSection> SearchBastionRules(string query);
+
+    IReadOnlyList<BastionFacility> GetBastionFacilities();
+    IReadOnlyList<BastionFacility> SearchBastionFacilities(string query);
 }

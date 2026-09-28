@@ -22,15 +22,13 @@ public sealed class ReferenceDataService : IReferenceDataService
     private readonly IReadOnlyList<RuleSectionNode> _ruleTree;
     private readonly IReadOnlyList<Feat> _feats;
     private readonly IReadOnlyList<EquipmentItem> _equipment;
+    private readonly IReadOnlyList<RuleSection> _bastionRuleSections;
+    private readonly IReadOnlyList<RuleSectionNode> _bastionRuleTree;
+    private readonly IReadOnlyList<BastionFacility> _bastionFacilities;
 
     public ReferenceDataService()
     {
-        _ruleSections = LoadEmbedded<RuleSectionDto>("rule-sections.json")
-            .Select(d => new RuleSection(d.Id, d.Title, d.ParentId, d.Order, d.Content,
-                (d.Tables ?? [])
-                    .Select(t => new ReferenceTable(t.Title, t.Columns, t.Rows))
-                    .ToList()))
-            .ToList();
+        _ruleSections = LoadRuleSections("rule-sections.json");
         _ruleTree = BuildRuleTree(_ruleSections);
 
         _feats = LoadEmbedded<FeatDto>("feats.json")
@@ -41,7 +39,23 @@ public sealed class ReferenceDataService : IReferenceDataService
             .Select(d => new EquipmentItem(d.Id, d.Name, d.Category, d.Cost, d.Weight, d.Description,
                 d.Stats ?? new Dictionary<string, JsonElement>()))
             .ToList();
+
+        _bastionRuleSections = LoadRuleSections("bastion-rules.json");
+        _bastionRuleTree = BuildRuleTree(_bastionRuleSections);
+
+        _bastionFacilities = LoadEmbedded<BastionFacilityDto>("bastion-facilities.json")
+            .Select(d => new BastionFacility(d.Id, d.Name, d.Kind, d.Level, d.Requirements, d.Size,
+                d.Hirelings, d.Orders, d.Description, d.Benefits))
+            .ToList();
     }
+
+    private static List<RuleSection> LoadRuleSections(string fileName) =>
+        LoadEmbedded<RuleSectionDto>(fileName)
+            .Select(d => new RuleSection(d.Id, d.Title, d.ParentId, d.Order, d.Content,
+                (d.Tables ?? [])
+                    .Select(t => new ReferenceTable(t.Title, t.Columns, t.Rows))
+                    .ToList()))
+            .ToList();
 
     public IReadOnlyList<RuleSectionNode> GetRuleTree() => _ruleTree;
 
@@ -72,6 +86,28 @@ public sealed class ReferenceDataService : IReferenceDataService
         if (string.IsNullOrWhiteSpace(query)) return _equipment;
         return _equipment
             .Where(e => Matches(e.Name, query) || Matches(e.Description, query))
+            .ToList();
+    }
+
+    public IReadOnlyList<RuleSectionNode> GetBastionRuleTree() => _bastionRuleTree;
+
+    public RuleSection? GetBastionRuleSection(string id) => _bastionRuleSections.FirstOrDefault(s => s.Id == id);
+
+    public IReadOnlyList<RuleSection> SearchBastionRules(string query)
+    {
+        if (string.IsNullOrWhiteSpace(query)) return [];
+        return _bastionRuleSections
+            .Where(s => Matches(s.Title, query) || Matches(s.Content, query))
+            .ToList();
+    }
+
+    public IReadOnlyList<BastionFacility> GetBastionFacilities() => _bastionFacilities;
+
+    public IReadOnlyList<BastionFacility> SearchBastionFacilities(string query)
+    {
+        if (string.IsNullOrWhiteSpace(query)) return _bastionFacilities;
+        return _bastionFacilities
+            .Where(f => Matches(f.Name, query) || Matches(f.Description, query) || f.Benefits.Any(b => Matches(b, query)))
             .ToList();
     }
 
@@ -144,5 +180,19 @@ public sealed class ReferenceDataService : IReferenceDataService
         public string Weight { get; set; } = "";
         public string Description { get; set; } = "";
         public Dictionary<string, JsonElement>? Stats { get; set; }
+    }
+
+    private sealed class BastionFacilityDto
+    {
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string Kind { get; set; } = "";
+        public int? Level { get; set; }
+        public string? Requirements { get; set; }
+        public string? Size { get; set; }
+        public string? Hirelings { get; set; }
+        public List<string> Orders { get; set; } = [];
+        public string Description { get; set; } = "";
+        public List<string> Benefits { get; set; } = [];
     }
 }
