@@ -190,7 +190,7 @@ else
     private string attunementFilter = "";
 
     private List<MagicItem> FilteredItems => allItems
-        .Where(m => string.IsNullOrEmpty(rarityFilter) || m.Rarity == rarityFilter)
+        .Where(m => string.IsNullOrEmpty(rarityFilter) || NormalizeRarity(m.Rarity) == rarityFilter)
         .Where(m => attunementFilter switch
         {
             "yes" => m.RequiresAttunement,
@@ -207,12 +207,31 @@ else
         ruleTree = ReferenceData.GetMagicItemRuleTree();
 
         allItems = ReferenceData.GetMagicItems().OrderBy(m => m.Name).ToList();
-        rarities = allItems.Select(m => m.Rarity).Distinct().OrderBy(r => r).ToList();
+
+        var rarityOrder = new[] { "Обычный", "Необычный", "Редкий", "Очень редкий", "Легендарный", "Артефакт", "Варьируется" };
+        rarities = allItems.Select(m => NormalizeRarity(m.Rarity)).Distinct()
+            .OrderBy(r => Array.IndexOf(rarityOrder, r) is >= 0 and var i ? i : rarityOrder.Length)
+            .ToList();
     }
 
     private void SelectRule(string id)
     {
         selectedRuleId = id;
         selectedRule = ReferenceData.GetMagicItemRuleSection(id);
+    }
+
+    // The book declines rarity adjectives by grammatical gender (Необычный/Необычное/Необычная,
+    // etc.) which we keep verbatim on the card, but that would otherwise scatter one rarity tier
+    // across several dropdown entries — group them for filtering only.
+    private static string NormalizeRarity(string rarity)
+    {
+        var r = rarity.Trim();
+        if (r.StartsWith("Очень редк", StringComparison.OrdinalIgnoreCase)) return "Очень редкий";
+        if (r.StartsWith("Необычн", StringComparison.OrdinalIgnoreCase)) return "Необычный";
+        if (r.StartsWith("Обычн", StringComparison.OrdinalIgnoreCase)) return "Обычный";
+        if (r.StartsWith("Редк", StringComparison.OrdinalIgnoreCase)) return "Редкий";
+        if (r.StartsWith("Легендарн", StringComparison.OrdinalIgnoreCase)) return "Легендарный";
+        if (r.StartsWith("Артефакт", StringComparison.OrdinalIgnoreCase)) return "Артефакт";
+        return "Варьируется";
     }
 }
