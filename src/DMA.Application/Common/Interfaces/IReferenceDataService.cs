@@ -25,4 +25,11 @@ public interface IReferenceDataService
 
     IReadOnlyList<BastionFacility> GetBastionFacilities();
     IReadOnlyList<BastionFacility> SearchBastionFacilities(string query);
+
+    IReadOnlyList<RuleSectionNode> GetMagicItemRuleTree();
+    RuleSection? GetMagicItemRuleSection(string id);
+    IReadOnlyList<RuleSection> SearchMagicItemRules(string query);
+
+    IReadOnlyList<MagicItem> GetMagicItems();
+    IReadOnlyList<MagicItem> SearchMagicItems(string query);
 }

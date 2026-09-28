@@ -1,0 +1,218 @@
+@page "/reference/magic-items"
+@rendermode InteractiveServer
+@using DMA.Application.Common.Interfaces
+@using DMA.Domain.Reference
+@inject IReferenceDataService ReferenceData
+
+<PageTitle>Магические предметы — Справочник</PageTitle>
+
+<a href="/reference">&larr; К справочнику</a>
+<h1>Магические предметы</h1>
+
+<h4 class="mt-4">Правила</h4>
+<div class="mb-3">
+    <input class="form-control" placeholder="Поиск по правилам..." @bind="ruleQuery" @bind:event="oninput" />
+</div>
+
+<div class="row g-3 mb-5">
+    <div class="col-md-4">
+        <div class="section-card">
+            @if (!string.IsNullOrWhiteSpace(ruleQuery))
+            {
+                var results = ReferenceData.SearchMagicItemRules(ruleQuery);
+                @if (results.Count == 0)
+                {
+                    <p class="text-secondary small">Ничего не найдено.</p>
+                }
+                else
+                {
+                    @foreach (var hit in results)
+                    {
+                        <div class="story-tree-row @(hit.Id == selectedRuleId ? "story-tree-row-selected" : "")" @onclick="() => SelectRule(hit.Id)">
+                            <span>@hit.Title</span>
+                        </div>
+                    }
+                }
+            }
+            else
+            {
+                @foreach (var root in ruleTree)
+                {
+                    <RuleOutlineNode Node="root" SelectedId="selectedRuleId" OnSelect="SelectRule" />
+                }
+            }
+        </div>
+    </div>
+    <div class="col-md-8">
+        <div class="section-card">
+            @if (selectedRule is null)
+            {
+                <p class="text-secondary">Выберите раздел слева.</p>
+            }
+            else
+            {
+                <h4>@selectedRule.Title</h4>
+                @foreach (var paragraph in selectedRule.Content.Split("\n\n", StringSplitOptions.RemoveEmptyEntries))
+                {
+                    <p>@paragraph</p>
+                }
+                @foreach (var table in selectedRule.Tables)
+                {
+                    @if (!string.IsNullOrWhiteSpace(table.Title))
+                    {
+                        <h6>@table.Title</h6>
+                    }
+                    <div class="table-responsive mb-3">
+                        <table class="table table-sm table-bordered">
+                            <thead>
+                                <tr>
+                                    @foreach (var col in table.Columns)
+                                    {
+                                        <th>@col</th>
+                                    }
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in table.Rows)
+                                {
+                                    <tr>
+                                        @foreach (var cell in row)
+                                        {
+                                            <td>@cell</td>
+                                        }
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+<h4>Каталог предметов</h4>
+<div class="row g-2 mb-3">
+    <div class="col-md-6">
+        <input class="form-control" placeholder="Поиск по названию или описанию..." @bind="itemQuery" @bind:event="oninput" />
+    </div>
+    <div class="col-md-3">
+        <select class="form-select" @bind="rarityFilter">
+            <option value="">Любая редкость</option>
+            @foreach (var rarity in rarities)
+            {
+                <option value="@rarity">@rarity</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-3">
+        <select class="form-select" @bind="attunementFilter">
+            <option value="">Настройка: неважно</option>
+            <option value="yes">Требует Настройки</option>
+            <option value="no">Без Настройки</option>
+        </select>
+    </div>
+</div>
+
+<p class="text-secondary small">Найдено: @FilteredItems.Count из @allItems.Count</p>
+
+@if (FilteredItems.Count == 0)
+{
+    <p class="text-secondary">Ничего не найдено.</p>
+}
+else
+{
+    <div class="row g-3">
+        @foreach (var item in FilteredItems)
+        {
+            <div class="col-md-6">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h5 class="card-title">@item.Name</h5>
+                        <p class="text-secondary small mb-1">
+                            @item.Type &middot; @item.Rarity
+                            @if (item.RequiresAttunement)
+                            {
+                                <text> &middot; Требуется Настройка@(string.IsNullOrWhiteSpace(item.AttunementNote) ? "" : $" ({item.AttunementNote})")</text>
+                            }
+                        </p>
+                        @foreach (var paragraph in item.Description.Split("\n\n", StringSplitOptions.RemoveEmptyEntries))
+                        {
+                            <p class="card-text">@paragraph</p>
+                        }
+                        @foreach (var table in item.Tables)
+                        {
+                            @if (!string.IsNullOrWhiteSpace(table.Title))
+                            {
+                                <h6>@table.Title</h6>
+                            }
+                            <div class="table-responsive mb-2">
+                                <table class="table table-sm table-bordered">
+                                    <thead>
+                                        <tr>
+                                            @foreach (var col in table.Columns)
+                                            {
+                                                <th>@col</th>
+                                            }
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var row in table.Rows)
+                                        {
+                                            <tr>
+                                                @foreach (var cell in row)
+                                                {
+                                                    <td>@cell</td>
+                                                }
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private IReadOnlyList<RuleSectionNode> ruleTree = [];
+    private string? selectedRuleId;
+    private RuleSection? selectedRule;
+    private string ruleQuery = "";
+
+    private List<MagicItem> allItems = [];
+    private List<string> rarities = [];
+    private string itemQuery = "";
+    private string rarityFilter = "";
+    private string attunementFilter = "";
+
+    private List<MagicItem> FilteredItems => allItems
+        .Where(m => string.IsNullOrEmpty(rarityFilter) || m.Rarity == rarityFilter)
+        .Where(m => attunementFilter switch
+        {
+            "yes" => m.RequiresAttunement,
+            "no" => !m.RequiresAttunement,
+            _ => true
+        })
+        .Where(m => string.IsNullOrWhiteSpace(itemQuery)
+            || m.Name.Contains(itemQuery, StringComparison.InvariantCultureIgnoreCase)
+            || m.Description.Contains(itemQuery, StringComparison.InvariantCultureIgnoreCase))
+        .ToList();
+
+    protected override void OnInitialized()
+    {
+        ruleTree = ReferenceData.GetMagicItemRuleTree();
+
+        allItems = ReferenceData.GetMagicItems().OrderBy(m => m.Name).ToList();
+        rarities = allItems.Select(m => m.Rarity).Distinct().OrderBy(r => r).ToList();
+    }
+
+    private void SelectRule(string id)
+    {
+        selectedRuleId = id;
+        selectedRule = ReferenceData.GetMagicItemRuleSection(id);
+    }
+}

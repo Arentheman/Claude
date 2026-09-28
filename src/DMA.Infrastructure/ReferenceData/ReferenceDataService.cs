@@ -25,6 +25,9 @@ public sealed class ReferenceDataService : IReferenceDataService
     private readonly IReadOnlyList<RuleSection> _bastionRuleSections;
     private readonly IReadOnlyList<RuleSectionNode> _bastionRuleTree;
     private readonly IReadOnlyList<BastionFacility> _bastionFacilities;
+    private readonly IReadOnlyList<RuleSection> _magicItemRuleSections;
+    private readonly IReadOnlyList<RuleSectionNode> _magicItemRuleTree;
+    private readonly IReadOnlyList<MagicItem> _magicItems;
 
     public ReferenceDataService()
     {
@@ -47,14 +50,24 @@ public sealed class ReferenceDataService : IReferenceDataService
             .Select(d => new BastionFacility(d.Id, d.Name, d.Kind, d.Level, d.Requirements, d.Size,
                 d.Hirelings, d.Orders, d.Description, d.Benefits))
             .ToList();
+
+        _magicItemRuleSections = LoadRuleSections("magic-item-rules.json");
+        _magicItemRuleTree = BuildRuleTree(_magicItemRuleSections);
+
+        _magicItems = LoadEmbedded<MagicItemDto>("magic-items.json")
+            .Select(d => new MagicItem(d.Id, d.Name, d.Type, d.Rarity, d.RequiresAttunement,
+                d.AttunementNote, d.Description, ToReferenceTables(d.Tables)))
+            .ToList();
     }
 
     private static List<RuleSection> LoadRuleSections(string fileName) =>
         LoadEmbedded<RuleSectionDto>(fileName)
-            .Select(d => new RuleSection(d.Id, d.Title, d.ParentId, d.Order, d.Content,
-                (d.Tables ?? [])
-                    .Select(t => new ReferenceTable(t.Title, t.Columns, t.Rows))
-                    .ToList()))
+            .Select(d => new RuleSection(d.Id, d.Title, d.ParentId, d.Order, d.Content, ToReferenceTables(d.Tables)))
+            .ToList();
+
+    private static List<ReferenceTable> ToReferenceTables(List<TableDto>? tables) =>
+        (tables ?? [])
+            .Select(t => new ReferenceTable(t.Title, t.Columns, t.Rows))
             .ToList();
 
     public IReadOnlyList<RuleSectionNode> GetRuleTree() => _ruleTree;
@@ -108,6 +121,28 @@ public sealed class ReferenceDataService : IReferenceDataService
         if (string.IsNullOrWhiteSpace(query)) return _bastionFacilities;
         return _bastionFacilities
             .Where(f => Matches(f.Name, query) || Matches(f.Description, query) || f.Benefits.Any(b => Matches(b, query)))
+            .ToList();
+    }
+
+    public IReadOnlyList<RuleSectionNode> GetMagicItemRuleTree() => _magicItemRuleTree;
+
+    public RuleSection? GetMagicItemRuleSection(string id) => _magicItemRuleSections.FirstOrDefault(s => s.Id == id);
+
+    public IReadOnlyList<RuleSection> SearchMagicItemRules(string query)
+    {
+        if (string.IsNullOrWhiteSpace(query)) return [];
+        return _magicItemRuleSections
+            .Where(s => Matches(s.Title, query) || Matches(s.Content, query))
+            .ToList();
+    }
+
+    public IReadOnlyList<MagicItem> GetMagicItems() => _magicItems;
+
+    public IReadOnlyList<MagicItem> SearchMagicItems(string query)
+    {
+        if (string.IsNullOrWhiteSpace(query)) return _magicItems;
+        return _magicItems
+            .Where(m => Matches(m.Name, query) || Matches(m.Description, query))
             .ToList();
     }
 
@@ -194,5 +229,17 @@ public sealed class ReferenceDataService : IReferenceDataService
         public List<string> Orders { get; set; } = [];
         public string Description { get; set; } = "";
         public List<string> Benefits { get; set; } = [];
+    }
+
+    private sealed class MagicItemDto
+    {
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string Type { get; set; } = "";
+        public string Rarity { get; set; } = "";
+        public bool RequiresAttunement { get; set; }
+        public string? AttunementNote { get; set; }
+        public string Description { get; set; } = "";
+        public List<TableDto>? Tables { get; set; }
     }
 }
