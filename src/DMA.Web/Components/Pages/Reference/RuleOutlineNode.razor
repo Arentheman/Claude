@@ -1,0 +1,22 @@
+@using DMA.Domain.Reference
+
+<div class="story-tree-node">
+    <div class="story-tree-row @(Node.Section.Id == SelectedId ? "story-tree-row-selected" : "")" @onclick="() => OnSelect.InvokeAsync(Node.Section.Id)">
+        <span>@Node.Section.Title</span>
+    </div>
+    @if (Node.Children.Count > 0)
+    {
+        <div class="story-tree-children">
+            @foreach (var child in Node.Children)
+            {
+                <RuleOutlineNode Node="child" SelectedId="SelectedId" OnSelect="OnSelect" />
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public RuleSectionNode Node { get; set; } = null!;
+    [Parameter] public string? SelectedId { get; set; }
+    [Parameter] public EventCallback<string> OnSelect { get; set; }
+}

@@ -1,0 +1,130 @@
+@page "/reference/equipment"
+@rendermode InteractiveServer
+@using System.Text.Json
+@using DMA.Application.Common.Interfaces
+@using DMA.Domain.Reference
+@inject IReferenceDataService ReferenceData
+
+<PageTitle>Экипировка — Справочник</PageTitle>
+
+<a href="/reference">&larr; К справочнику</a>
+<h1>Экипировка</h1>
+
+<div class="row g-2 mb-3">
+    <div class="col-md-8">
+        <input class="form-control" placeholder="Поиск по экипировке..." @bind="query" @bind:event="oninput" />
+    </div>
+    <div class="col-md-4">
+        <select class="form-select" @bind="categoryFilter">
+            <option value="">Все категории</option>
+            @foreach (var category in categories)
+            {
+                <option value="@category">@CategoryLabel(category)</option>
+            }
+        </select>
+    </div>
+</div>
+
+@if (Filtered.Count == 0)
+{
+    <p class="text-secondary">Ничего не найдено.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle">
+            <thead>
+                <tr>
+                    <th>Название</th>
+                    <th>Категория</th>
+                    <th>Цена</th>
+                    <th>Вес</th>
+                    <th>Параметры</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in Filtered)
+                {
+                    <tr>
+                        <td>
+                            <strong>@item.Name</strong>
+                            @if (!string.IsNullOrWhiteSpace(item.Description))
+                            {
+                                <div class="text-secondary small">@item.Description</div>
+                            }
+                        </td>
+                        <td>@CategoryLabel(item.Category)</td>
+                        <td>@item.Cost</td>
+                        <td>@item.Weight</td>
+                        <td>
+                            @foreach (var (key, value) in item.Stats)
+                            {
+                                <div class="small"><strong>@StatLabel(key):</strong> @FormatStatValue(value)</div>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private List<EquipmentItem> all = [];
+    private List<string> categories = [];
+    private string query = "";
+    private string categoryFilter = "";
+
+    private List<EquipmentItem> Filtered => all
+        .Where(e => string.IsNullOrEmpty(categoryFilter) || e.Category == categoryFilter)
+        .Where(e => string.IsNullOrWhiteSpace(query)
+            || e.Name.Contains(query, StringComparison.InvariantCultureIgnoreCase)
+            || e.Description.Contains(query, StringComparison.InvariantCultureIgnoreCase))
+        .ToList();
+
+    protected override void OnInitialized()
+    {
+        all = ReferenceData.GetEquipment().ToList();
+        categories = all.Select(e => e.Category).Distinct().OrderBy(c => c).ToList();
+    }
+
+    private static readonly Dictionary<string, string> StatLabels = new()
+    {
+        ["damage"] = "Урон",
+        ["properties"] = "Свойства",
+        ["armorClass"] = "КЗ",
+        ["strength"] = "Треб. Силы",
+        ["stealth"] = "Скрытность",
+        ["capacity"] = "Вместимость",
+        ["speed"] = "Скорость",
+    };
+
+    private static string StatLabel(string key) => StatLabels.GetValueOrDefault(key, key);
+
+    private static string CategoryLabel(string category) => category.Replace('-', ' ') switch
+    {
+        "simple melee weapon" => "Простое оружие ближнего боя",
+        "simple ranged weapon" => "Простое дальнобойное оружие",
+        "martial melee weapon" => "Воинское оружие ближнего боя",
+        "martial ranged weapon" => "Воинское дальнобойное оружие",
+        "light armor" => "Лёгкий доспех",
+        "medium armor" => "Средний доспех",
+        "heavy armor" => "Тяжёлый доспех",
+        "shield" => "Щит",
+        "adventuring gear" => "Снаряжение искателя приключений",
+        "tool" => "Инструмент",
+        "mount" => "Верховое животное",
+        "vehicle" => "Транспорт",
+        "trade good" => "Товар",
+        var other => other
+    };
+
+    private static string FormatStatValue(JsonElement el) => el.ValueKind switch
+    {
+        JsonValueKind.Array => string.Join(", ", el.EnumerateArray().Select(e => e.ToString())),
+        JsonValueKind.Null => "—",
+        JsonValueKind.True => "да",
+        JsonValueKind.False => "нет",
+        _ => el.ToString()
+    };
+}

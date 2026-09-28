@@ -1,0 +1,96 @@
+@page "/reference/feats"
+@rendermode InteractiveServer
+@using DMA.Application.Common.Interfaces
+@using DMA.Domain.Reference
+@inject IReferenceDataService ReferenceData
+
+<PageTitle>Черты — Справочник</PageTitle>
+
+<a href="/reference">&larr; К справочнику</a>
+<h1>Черты</h1>
+
+<div class="row g-2 mb-3">
+    <div class="col-md-8">
+        <input class="form-control" placeholder="Поиск по чертам..." @bind="query" @bind:event="oninput" />
+    </div>
+    <div class="col-md-4">
+        <select class="form-select" @bind="categoryFilter">
+            <option value="">Все категории</option>
+            @foreach (var category in categories)
+            {
+                <option value="@category">@CategoryLabel(category)</option>
+            }
+        </select>
+    </div>
+</div>
+
+@if (Filtered.Count == 0)
+{
+    <p class="text-secondary">Ничего не найдено.</p>
+}
+else
+{
+    <div class="row g-3">
+        @foreach (var feat in Filtered)
+        {
+            <div class="col-md-6">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h5 class="card-title">@feat.Name</h5>
+                        <p class="text-secondary small mb-1">
+                            @CategoryLabel(feat.Category)
+                            @if (!string.IsNullOrWhiteSpace(feat.Prerequisite))
+                            {
+                                <text> &middot; Требование: @feat.Prerequisite</text>
+                            }
+                            @if (feat.Repeatable)
+                            {
+                                <text> &middot; Можно брать многократно</text>
+                            }
+                        </p>
+                        @if (!string.IsNullOrWhiteSpace(feat.Summary))
+                        {
+                            <p class="card-text">@feat.Summary</p>
+                        }
+                        <ul class="mb-0">
+                            @foreach (var benefit in feat.Benefits)
+                            {
+                                <li>@benefit</li>
+                            }
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private List<Feat> all = [];
+    private List<string> categories = [];
+    private string query = "";
+    private string categoryFilter = "";
+
+    private List<Feat> Filtered => all
+        .Where(f => string.IsNullOrEmpty(categoryFilter) || f.Category == categoryFilter)
+        .Where(f => string.IsNullOrWhiteSpace(query)
+            || f.Name.Contains(query, StringComparison.InvariantCultureIgnoreCase)
+            || f.Summary.Contains(query, StringComparison.InvariantCultureIgnoreCase)
+            || f.Benefits.Any(b => b.Contains(query, StringComparison.InvariantCultureIgnoreCase)))
+        .ToList();
+
+    protected override void OnInitialized()
+    {
+        all = ReferenceData.GetFeats().ToList();
+        categories = all.Select(f => f.Category).Distinct().OrderBy(c => c).ToList();
+    }
+
+    private static string CategoryLabel(string category) => category switch
+    {
+        "origin" => "Черта происхождения",
+        "general" => "Общая черта",
+        "fighting_style" => "Боевой стиль",
+        "epic_boon" => "Эпический дар",
+        _ => category
+    };
+}
