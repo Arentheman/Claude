@@ -249,7 +249,45 @@ public sealed class ReferenceDataService : IReferenceDataService
     {
         public string Title { get; set; } = "";
         public List<string> Columns { get; set; } = [];
+
+        [JsonConverter(typeof(StringMatrixConverter))]
         public List<List<string>> Rows { get; set; } = [];
+    }
+
+    /// <summary>
+    /// Table cells should be strings, but the extraction agents that produced this bundled data
+    /// occasionally emitted a bare JSON number for a numeric-looking cell (e.g. a spell-slot count)
+    /// instead of a quoted string. Tolerate any JSON primitive here rather than failing to load the
+    /// whole file over one mistyped cell.
+    /// </summary>
+    private sealed class StringMatrixConverter : JsonConverter<List<List<string>>>
+    {
+        public override List<List<string>> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            var rows = new List<List<string>>();
+            if (reader.TokenType != JsonTokenType.StartArray) return rows;
+            while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+            {
+                var row = new List<string>();
+                while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+                {
+                    row.Add(reader.TokenType switch
+                    {
+                        JsonTokenType.String => reader.GetString() ?? "",
+                        JsonTokenType.Number => reader.GetDouble().ToString(System.Globalization.CultureInfo.InvariantCulture),
+                        JsonTokenType.True => "true",
+                        JsonTokenType.False => "false",
+                        JsonTokenType.Null => "",
+                        _ => ""
+                    });
+                }
+                rows.Add(row);
+            }
+            return rows;
+        }
+
+        public override void Write(Utf8JsonWriter writer, List<List<string>> value, JsonSerializerOptions options) =>
+            JsonSerializer.Serialize(writer, value, options);
     }
 
     private sealed class RuleSectionDto
