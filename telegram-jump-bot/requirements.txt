@@ -1,0 +1,5 @@
+numpy
+opencv-python
+mss
+pynput
+pydirectinput; sys_platform == "win32"

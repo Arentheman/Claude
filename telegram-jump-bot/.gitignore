@@ -1,0 +1,6 @@
+config.json
+population.json
+population.json.tmp
+setup_check.png
+debug_image.png
+__pycache__/
