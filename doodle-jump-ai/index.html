@@ -1,0 +1,808 @@
+<title>Нейро-Дудл</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Golos+Text:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a page from a squared school notebook — the game on the left, the lab journal (stats, chart, brain) on the right.
+   One deliberate light look: graph paper, ballpoint blue, doodle green. */
+:root {
+  --paper: #fbfcf8;
+  --sheet: #ffffff;
+  --grid: #dde8f0;
+  --line: #c6d4df;
+  --ink: #1d2733;
+  --ink-2: #566371;
+  --green: #3f8a1e;
+  --blue: #2c63b8;
+  --red: #c2412d;
+  --red-soft: #f6e3df;
+  --green-soft: #e7f2df;
+  --f-display: "Caveat", "Segoe Print", "Comic Sans MS", cursive;
+  --f-body: "Golos Text", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "Consolas", monospace;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+body {
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 24px 24px;
+  color: var(--ink);
+  font: 15px/1.5 var(--f-body);
+}
+.wrap { max-width: 1060px; margin: 0 auto; padding-inline: 16px; padding-block: 24px 48px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 20px; margin-bottom: 20px; }
+h1 { font: 700 52px/1 var(--f-display); margin: 0; color: var(--ink); text-wrap: balance; }
+h1 span { color: var(--green); }
+.lede { margin: 0; max-width: 62ch; color: var(--ink-2); }
+h2 { font: 700 26px/1.1 var(--f-display); margin: 0 0 6px; color: var(--blue); }
+
+.layout { display: grid; grid-template-columns: minmax(0, 420px) minmax(0, 1fr); gap: 28px; align-items: start; }
+@media (max-width: 860px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+
+.stage { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.screen {
+  position: relative; width: 100%; max-width: 420px; aspect-ratio: 400 / 640;
+  border: 2px solid var(--ink); border-radius: 6px; overflow: hidden; background: var(--sheet);
+  box-shadow: 4px 4px 0 var(--line);
+}
+#game { display: block; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+.status { font: 13px/1.4 var(--f-mono); color: var(--ink-2); font-variant-numeric: tabular-nums; min-height: 1.4em; }
+
+.panel { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; border-top: 2px solid var(--ink); border-bottom: 1px solid var(--line); }
+@media (max-width: 520px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.stat { padding: 10px 12px 10px 0; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.stat .k { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); }
+.stat .v { font: 600 22px/1.15 var(--f-mono); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stat .s { font: 12px/1.3 var(--f-mono); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+
+.controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+.group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.group > .lbl { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); }
+.seg { display: inline-flex; border: 1.5px solid var(--ink); border-radius: 6px; overflow: hidden; background: var(--sheet); }
+.seg button { border: 0; border-right: 1.5px solid var(--ink); border-radius: 0; }
+.seg button:last-child { border-right: 0; }
+button {
+  font: 500 14px/1 var(--f-body); color: var(--ink); background: var(--sheet);
+  border: 1.5px solid var(--ink); border-radius: 6px; padding: 8px 12px; cursor: pointer;
+}
+button:hover { background: var(--green-soft); }
+button[aria-pressed="true"] { background: var(--ink); color: var(--sheet); }
+button:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+button.danger { border-color: var(--red); color: var(--red); }
+button.danger:hover, button.danger.armed { background: var(--red-soft); }
+
+.figure { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; color: var(--ink-2); }
+.legend i { display: inline-block; width: 18px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 6px; }
+.chartbox { position: relative; width: 100%; height: 190px; }
+.chartbox canvas, .netbox canvas { display: block; width: 100%; height: 100%; }
+.tip {
+  position: absolute; pointer-events: none; background: var(--ink); color: var(--sheet);
+  font: 12px/1.35 var(--f-mono); padding: 6px 8px; border-radius: 4px; white-space: nowrap; transform: translate(-50%, -110%);
+  font-variant-numeric: tabular-nums;
+}
+.netbox { position: relative; width: 100%; height: 280px; }
+.caption { font-size: 13px; color: var(--ink-2); margin: 0; max-width: 62ch; }
+
+.notes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; border-top: 1px solid var(--line); padding-top: 16px; }
+@media (max-width: 640px) { .notes { grid-template-columns: minmax(0, 1fr); } }
+.notes h3 { font: 700 22px/1.1 var(--f-display); margin: 0 0 4px; color: var(--ink); }
+.notes p { margin: 0; font-size: 14px; color: var(--ink-2); }
+kbd { font: 600 12px/1 var(--f-mono); border: 1.5px solid var(--ink); border-bottom-width: 3px; border-radius: 4px; padding: 2px 5px; background: var(--sheet); color: var(--ink); }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Нейро-<span>Дудл</span></h1>
+    <p class="lede">60 дудлеров учатся прыгать с нуля. Каждый управляется своей нейросетью, у неё только три кнопки: <kbd>A</kbd> <kbd>D</kbd> и <kbd>ЛКМ</kbd>. После каждого поколения лучшие передают веса сети потомкам с мутациями, и с каждым поколением прыгают выше.</p>
+  </header>
+
+  <div class="layout">
+    <section class="stage" aria-label="Игра">
+      <div class="screen"><canvas id="game" width="400" height="640" aria-label="Игровое поле"></canvas></div>
+      <div class="status" id="status">Загрузка…</div>
+    </section>
+
+    <section class="panel" aria-label="Обучение">
+      <div class="stats">
+        <div class="stat"><span class="k">Поколение</span><span class="v" id="sGen">1</span><span class="s" id="sRound">заезд 1 из 3</span></div>
+        <div class="stat"><span class="k">Живы</span><span class="v" id="sAlive">60</span><span class="s">из 60</span></div>
+        <div class="stat"><span class="k">Сейчас</span><span class="v" id="sNow">0</span><span class="s" id="sNowK">монстров: 0</span></div>
+        <div class="stat"><span class="k">Рекорд</span><span class="v" id="sBest">0</span><span class="s" id="sBestK">среднее за 3 заезда</span></div>
+      </div>
+
+      <div class="controls">
+        <div class="group"><span class="lbl">Скорость</span>
+          <div class="seg" role="group" aria-label="Скорость">
+            <button id="sp1" data-speed="1" aria-pressed="true">1×</button>
+            <button id="sp3" data-speed="3" aria-pressed="false">3×</button>
+            <button id="sp10" data-speed="10" aria-pressed="false">10×</button>
+            <button id="spT" data-speed="0" aria-pressed="false">Турбо</button>
+          </div>
+        </div>
+        <div class="group"><span class="lbl">Кто играет</span>
+          <div class="seg" role="group" aria-label="Режим">
+            <button id="modeAI" aria-pressed="true">Нейросеть</button>
+            <button id="modeMe" aria-pressed="false">Я сам</button>
+          </div>
+        </div>
+        <div class="group">
+          <button id="pause" aria-pressed="false">Пауза</button>
+          <button id="ghosts" aria-pressed="true">Показывать всех</button>
+          <button id="reset" class="danger">Начать обучение заново</button>
+        </div>
+      </div>
+
+      <div class="figure">
+        <h2>Как растёт высота</h2>
+        <div class="legend"><span><i style="border-color: var(--green)"></i>лучший в поколении</span><span><i style="border-color: var(--blue); border-top-style: dashed"></i>среднее по поколению</span></div>
+        <div class="chartbox" id="chartbox"><canvas id="chart" aria-label="График высоты по поколениям"></canvas><div class="tip" id="tip" hidden></div></div>
+        <p class="caption">Высота за поколение — среднее по трём заездам на разных уровнях, чтобы везение не решало, кто останется.</p>
+      </div>
+
+      <div class="figure">
+        <h2>Мозг лидера</h2>
+        <div class="netbox"><canvas id="net" aria-label="Схема нейросети лидера"></canvas></div>
+        <p class="caption">19 входов → 12 скрытых нейронов → 2 выхода. Зелёные связи усиливают сигнал, красные гасят; яркость показывает, что идёт по связи прямо сейчас.</p>
+      </div>
+
+      <div class="notes">
+        <div><h3>Что видит</h3><p>Свою скорость, три платформы над той, от которой оттолкнулся (смещение считается с учётом прохода сквозь край экрана), ближайшего монстра и готов ли бросок.</p></div>
+        <div><h3>Что жмёт</h3><p>Выход «A/D» — влево, вправо или ничего. Выход «ЛКМ» — бросить оружие в ближайшего монстра. Бросок стоит 3 очка, убийство даёт 250.</p></div>
+        <div><h3>Как учится</h3><p>Нейроэволюция без учителя: 10 лучших сетей переходят в следующее поколение как есть, остальные 50 — копии двадцати лучших со случайными мутациями весов. Прогресс сохраняется в браузере.</p></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+// ===== Game simulation =====
+const W = 400, H = 640, G = 0.32, JUMP = -11.2, SPRING = -19, MAXVX = 6.2, PW = 58, PH = 12;
+const STALL_TICKS = 720, MAX_TICKS = 36000, COOLDOWN = 20, SHOT_SPEED = 14;
+
+function rngOf(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+// Shortest signed horizontal distance on a wrapping screen
+const wdx = (a, b) => { let d = b - a; if (d > W / 2) d -= W; else if (d < -W / 2) d += W; return d; };
+
+class World {
+  constructor(seed, ai = true) {
+    this.rng = rngOf(seed); this.ai = ai; this.t = 0;
+    this.plats = []; this.enemies = []; this.shots = [];
+    this.startY = H - 40; this.topY = H - 40; this.lastEnemyY = H - 40;
+    this.plats.push(this.mk(W / 2 - PW / 2, H - 40, 'n', 0));
+    this.base = this.plats[0];
+    this.p = { x: W / 2, y: H - 60, vx: 0, vy: JUMP, face: 1 };
+    this.cam = 0; this.maxH = 0; this.kills = 0; this.throws = 0; this.stall = 0; this.cool = 0; this.throwT = -99;
+    this.alive = true; this.cause = ''; this.lastMove = 0; this.lastThrow = false;
+    this.gen();
+  }
+  mk(x, y, type, diff) {
+    const r = this.rng;
+    const pl = { x, y, cx: x, type, amp: 0, spd: 0, ph: 0, broken: false, spring: false, sx: 0, fall: 0 };
+    if (type === 'm') {
+      pl.amp = Math.min(30 + r() * (60 + 80 * diff), (W - PW) / 2 - 2);
+      pl.cx = pl.amp + r() * (W - PW - 2 * pl.amp);
+      pl.spd = 0.015 + r() * 0.025 * (1 + diff);
+      pl.ph = r() * 6.283;
+      pl.x = pl.cx + pl.amp * Math.sin(pl.ph);
+    }
+    return pl;
+  }
+  gen() {
+    const r = this.rng;
+    while (this.topY > this.cam - 400) {
+      const h = this.startY - this.topY, diff = Math.min(1, h / 25000);
+      const gap = 28 + r() * (40 + 105 * diff);
+      this.topY -= gap;
+      const isM = r() < 0.08 + 0.32 * diff && h > 800;
+      const pl = this.mk(r() * (W - PW), this.topY, isM ? 'm' : 'n', diff);
+      if (!isM && r() < 0.07) { pl.spring = true; pl.sx = 6 + r() * (PW - 26); }
+      this.plats.push(pl);
+      if (r() < 0.12 + 0.25 * diff) {
+        this.plats.push(this.mk(r() * (W - PW), this.topY + gap * 0.5, 'b', diff));
+      }
+      if (h > 1500 && this.lastEnemyY - this.topY > 650 && r() < 0.08 + 0.12 * diff) {
+        const amp = r() * 60;
+        this.enemies.push({
+          cx: 40 + amp + r() * (W - 80 - 2 * amp), y: this.topY - 70, amp,
+          spd: 0.01 + r() * 0.03, ph: r() * 6.283, x: 0, by: this.topY - 70, dead: false, fall: 0,
+        });
+        this.lastEnemyY = this.topY;
+      }
+    }
+  }
+  // move: -1 (A), 0, 1 (D); throwing: bool; tx/ty: world-space target (human click)
+  step(move, throwing, tx, ty) {
+    if (!this.alive) return;
+    const p = this.p; this.t++; this.cool--;
+    this.lastMove = move; this.lastThrow = false;
+    for (const pl of this.plats) {
+      if (pl.type === 'm') pl.x = pl.cx + pl.amp * Math.sin(this.t * pl.spd + pl.ph);
+      if (pl.broken) { pl.fall += 0.5; pl.y += pl.fall; }
+    }
+    for (const e of this.enemies) {
+      e.x = e.cx + e.amp * Math.sin(this.t * e.spd + e.ph);
+      if (e.dead) { e.fall += 0.6; e.y += e.fall; } else e.y = e.by + 5 * Math.sin(this.t * 0.06 + e.ph);
+    }
+    p.vx += (move * MAXVX - p.vx) * 0.25;
+    if (move) p.face = move;
+    p.x = (p.x + p.vx + W) % W;
+    const oy = p.y;
+    p.vy += G; p.y += p.vy;
+    if (p.vy > 0) {
+      for (const pl of this.plats) {
+        if (pl.broken) continue;
+        if (oy + 20 <= pl.y && p.y + 20 >= pl.y && p.x + 13 > pl.x && p.x - 13 < pl.x + PW) {
+          if (pl.type === 'b') { pl.broken = true; continue; }
+          const onSpring = pl.spring && p.x + 10 > pl.x + pl.sx && p.x - 10 < pl.x + pl.sx + 16;
+          p.vy = onSpring ? SPRING : JUMP; p.y = pl.y - 20; pl.hit = this.t; this.base = pl;
+          break;
+        }
+      }
+    }
+    for (const e of this.enemies) {
+      if (e.dead) continue;
+      if (Math.abs(wdx(p.x, e.x)) < 30 && Math.abs(p.y - e.y) < 36) {
+        if (p.vy > 0 && oy + 20 <= e.y - 6) { e.dead = true; this.kills++; p.vy = JUMP; }
+        else { this.die('монстр'); return; }
+      }
+    }
+    if (throwing && this.cool <= 0) {
+      let target = null;
+      if (tx !== undefined) target = { x: tx, y: ty };
+      else {
+        let bd = Infinity;
+        for (const e of this.enemies) {
+          if (e.dead || e.y < this.cam - 20 || e.y > this.cam + H) continue;
+          const d = Math.hypot(wdx(p.x, e.x), e.y - p.y);
+          if (d < bd) { bd = d; target = { x: p.x + wdx(p.x, e.x), y: e.y }; }
+        }
+        if (!target) target = { x: p.x, y: p.y - 100 };
+      }
+      const dx = target.x - p.x, dy = target.y - (p.y - 16), d = Math.hypot(dx, dy) || 1;
+      this.shots.push({ x: p.x, y: p.y - 16, vx: dx / d * SHOT_SPEED, vy: dy / d * SHOT_SPEED, a: 0 });
+      this.cool = COOLDOWN; this.throws++; this.lastThrow = true; this.throwT = this.t;
+    }
+    for (const s of this.shots) {
+      s.x += s.vx; s.y += s.vy; s.a += 0.45;
+      for (const e of this.enemies) {
+        if (!e.dead && Math.abs(wdx(s.x, e.x)) < 26 && Math.abs(s.y - e.y) < 26) { e.dead = true; this.kills++; s.done = true; break; }
+      }
+      if (s.y < this.cam - 40 || s.y > this.cam + H + 40) s.done = true;
+      s.x = (s.x + W) % W;
+    }
+    this.shots = this.shots.filter(s => !s.done);
+    if (p.y < this.cam + H * 0.42) this.cam = p.y - H * 0.42;
+    const h = this.startY - p.y;
+    if (h > this.maxH + 0.5) { this.maxH = h; this.stall = 0; } else this.stall++;
+    if (p.y - this.cam > H + 30) { this.die('упал'); return; }
+    if (this.ai && this.stall > STALL_TICKS) { this.die('застрял'); return; }
+    if (this.ai && this.t > MAX_TICKS) { this.die('время вышло'); return; }
+    const cut = this.cam + H + 80;
+    if (this.plats.length > 60 || this.t % 30 === 0) {
+      this.plats = this.plats.filter(pl => pl.y < cut);
+      this.enemies = this.enemies.filter(e => e.y < cut);
+    }
+    this.gen();
+  }
+  die(cause) { this.alive = false; this.cause = cause; }
+  // Network inputs: what the doodler "sees".
+  // Platforms are measured from the one it last bounced on, so "the next step up" is always slot 0.
+  sense() {
+    const p = this.p, feet = p.y + 20, inp = [p.vx / MAXVX, p.vy / 15];
+    const put = (pl) => {
+      if (!pl) { inp.push(0, 0, 0, 0); return; }
+      const vel = pl.type === 'm' ? pl.amp * pl.spd * Math.cos(this.t * pl.spd + pl.ph) : 0;
+      inp.push(wdx(p.x, pl.x + PW / 2) / (W / 2), (pl.y - feet) / 300, vel / 3, 1);
+    };
+    const base = this.base;
+    const next = [];
+    for (const pl of this.plats) if (!pl.broken && pl.type !== 'b' && pl.y < base.y - 1 && pl.y < this.cam + H - 10) next.push(pl);
+    next.sort((a, b) => b.y - a.y);
+    for (let i = 0; i < 3; i++) put(next[i]);
+    let be = null, bd = Infinity;
+    for (const e of this.enemies) {
+      if (e.dead || e.y < this.cam - 20 || e.y > this.cam + H) continue;
+      const d = Math.hypot(wdx(p.x, e.x), e.y - p.y);
+      if (d < bd) { bd = d; be = e; }
+    }
+    if (be) inp.push(wdx(p.x, be.x) / (W / 2), (be.y - p.y) / 300, 1); else inp.push(0, 0, 0);
+    inp.push(this.cool <= 0 ? 1 : 0, 1);
+    return inp;
+  }
+  fitness() { return this.maxH + this.kills * 250 - this.throws * 3; }
+}
+
+// ===== Neural net: 19 inputs -> 12 tanh -> 2 outputs (steer, throw) =====
+const NI = 19, NH = 12, NO = 2;
+const O_B1 = NI * NH, O_W2 = O_B1 + NH, O_B2 = O_W2 + NH * NO, NG = O_B2 + NO;
+function think(g, inp, hid, out) {
+  for (let j = 0; j < NH; j++) {
+    let s = g[O_B1 + j];
+    for (let i = 0; i < NI; i++) s += g[j * NI + i] * inp[i];
+    hid[j] = Math.tanh(s);
+  }
+  for (let k = 0; k < NO; k++) {
+    let s = g[O_B2 + k];
+    for (let j = 0; j < NH; j++) s += g[O_W2 + k * NH + j] * hid[j];
+    out[k] = Math.tanh(s);
+  }
+}
+
+let R = rngOf((Date.now() ^ 0x9e3779b9) >>> 0);
+const gauss = () => { const u = R() || 1e-9, v = R(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(6.283185 * v); };
+function randomGenome() { const g = new Float32Array(NG); for (let i = 0; i < NG; i++) g[i] = gauss() * 0.6; return g; }
+
+// Inputs that flip sign when the world is mirrored left<->right
+const DEADZONE = 0.05;
+const MIRROR = [0, 2, 4, 6, 8, 10, 12, 14];
+class Agent {
+  constructor(genome, seed) {
+    this.g = genome; this.w = new World(seed);
+    this.hid = new Float32Array(NH); this.out = new Float32Array(NO);
+    this.hidM = new Float32Array(NH); this.outM = new Float32Array(NO);
+    this.inp = null; this.steer = 0;
+  }
+  // The net looks at the scene and at its mirror image. Steering is the difference of the two,
+  // so it is left/right symmetric by construction and only has to learn *which way* is good.
+  tick() {
+    const w = this.w; if (!w.alive) return;
+    const inp = this.inp = w.sense();
+    const mir = inp.slice(); for (const i of MIRROR) mir[i] = -mir[i];
+    think(this.g, inp, this.hid, this.out);
+    think(this.g, mir, this.hidM, this.outM);
+    const s = this.steer = this.out[0] - this.outM[0];
+    w.step(s < -DEADZONE ? -1 : s > DEADZONE ? 1 : 0, this.out[1] + this.outM[1] > 0);
+  }
+}
+
+const ROUNDS = 3, ELITE = 10, MUT_RATE = 0.2, MUT_SIGMA = 0.3;
+const pack = g => Array.from(g, v => Math.round(v * 1e4) / 1e4);
+class Population {
+  constructor(size = 60, saved = null) {
+    this.size = size; this.gen = 1; this.history = []; this.bestFit = -Infinity; this.best = null;
+    this.bestH = 0; this.bestKills = 0;
+    this.genomes = [];
+    if (saved && saved.ng === NG) {
+      this.gen = saved.gen; this.history = saved.history || []; this.bestFit = saved.bestFit; this.bestH = saved.bestH || 0;
+      this.bestKills = saved.bestKills || 0;
+      this.best = saved.best ? Float32Array.from(saved.best) : null;
+      for (const g of saved.genomes) this.genomes.push(Float32Array.from(g));
+    }
+    while (this.genomes.length < size) this.genomes.push(randomGenome());
+    this.begin();
+  }
+  begin() {
+    this.round = 0; this.score = new Float64Array(this.size); this.heights = new Float64Array(this.size);
+    this.kills = new Float64Array(this.size);
+    this.beginRound();
+  }
+  // Each genome plays ROUNDS different levels; its fitness is the average, so luck matters less
+  beginRound() {
+    this.seed = (R() * 4294967296) >>> 0;
+    this.agents = this.genomes.map(g => new Agent(g, this.seed));
+  }
+  aliveCount() { let n = 0; for (const a of this.agents) if (a.w.alive) n++; return n; }
+  tick() {
+    let any = false;
+    for (const a of this.agents) if (a.w.alive) { a.tick(); any = true; }
+    if (!any) {
+      this.agents.forEach((a, i) => { this.score[i] += a.w.fitness(); this.heights[i] += a.w.maxH; this.kills[i] += a.w.kills; });
+      if (++this.round < ROUNDS) { this.beginRound(); return false; }
+      this.evolve(); return true;
+    }
+    return false;
+  }
+  evolve() {
+    const scored = this.genomes.map((g, i) => ({ g, f: this.score[i] / ROUNDS, h: this.heights[i] / ROUNDS, k: this.kills[i] / ROUNDS }))
+      .sort((a, b) => b.f - a.f);
+    const avg = scored.reduce((s, x) => s + x.h, 0) / scored.length;
+    this.history.push({ gen: this.gen, best: scored[0].h, avg, kills: scored[0].k });
+    if (this.history.length > 400) this.history.shift();
+    if (scored[0].f > this.bestFit) {
+      this.bestFit = scored[0].f; this.best = scored[0].g.slice(); this.bestH = scored[0].h; this.bestKills = scored[0].k;
+    }
+    // Truncation selection: the top ELITE survive unchanged, children are mutated copies of the top 2×ELITE
+    const next = [];
+    for (let i = 0; i < ELITE; i++) next.push(scored[i].g);
+    while (next.length < this.size) {
+      const c = scored[(R() * ELITE * 2) | 0].g.slice();
+      for (let i = 0; i < NG; i++) {
+        if (R() < MUT_RATE) c[i] += gauss() * MUT_SIGMA;
+      }
+      next.push(c);
+    }
+    this.genomes = next; this.gen++;
+    this.begin();
+  }
+  serialize() {
+    return {
+      gen: this.gen, history: this.history, bestFit: this.bestFit, bestH: this.bestH, bestKills: this.bestKills,
+      best: this.best ? pack(this.best) : null, genomes: this.genomes.map(pack), ng: NG,
+    };
+  }
+}
+
+// ===== Rendering & UI =====
+const COLORS = {
+  paper: '#ffffff', grid: '#dde8f0', ink: '#1d2733', ink2: '#566371',
+  green: '#3f8a1e', blue: '#2c63b8', red: '#c2412d',
+  plat: '#7cc242', platEdge: '#3e6b1f', move: '#5aa9e6', moveEdge: '#245b8a', brk: '#b88a55', brkEdge: '#6b4724',
+  line: '#c6d4df', body: '#d3dc4a', bodyEdge: '#3a3f1c', pants: '#5b7d2a', monster: '#7b62d9', monsterEdge: '#36256f',
+};
+const SAVE_KEY = 'neuro-doodle-v1';
+const $ = id => document.getElementById(id);
+const game = $('game'), gctx = game.getContext('2d');
+
+let pop, human = null, mode = 'ai', speed = 1, paused = false, showGhosts = true, follow = null;
+const keys = { left: false, right: false };
+let pendingThrow = null;
+
+function loadSaved() {
+  try { const raw = localStorage.getItem(SAVE_KEY); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+}
+function save() {
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(pop.serialize())); } catch (e) { /* storage unavailable */ }
+}
+
+function setupCanvas(cv, w, h) {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); return ctx;
+}
+setupCanvas(game, W, H);
+
+// ---------- game drawing ----------
+function rr(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+
+function drawPaper(ctx, cam) {
+  ctx.fillStyle = COLORS.paper; ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = COLORS.grid; ctx.lineWidth = 1; ctx.beginPath();
+  const off = ((-cam % 20) + 20) % 20;
+  for (let y = off; y < H; y += 20) { ctx.moveTo(0, y + 0.5); ctx.lineTo(W, y + 0.5); }
+  for (let x = 0; x < W; x += 20) { ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, H); }
+  ctx.stroke();
+}
+
+function drawPlatform(ctx, pl, cam) {
+  const y = pl.y - cam;
+  if (y < -20 || y > H + 20) return;
+  const fill = pl.type === 'm' ? COLORS.move : pl.type === 'b' ? COLORS.brk : COLORS.plat;
+  const edge = pl.type === 'm' ? COLORS.moveEdge : pl.type === 'b' ? COLORS.brkEdge : COLORS.platEdge;
+  ctx.lineWidth = 2; ctx.strokeStyle = edge; ctx.fillStyle = fill;
+  if (pl.broken) {
+    const s = Math.min(0.6, pl.fall * 0.04);
+    for (const side of [-1, 1]) {
+      ctx.save(); ctx.translate(pl.x + PW / 2 + side * 15, y + PH / 2); ctx.rotate(side * s);
+      rr(ctx, -PW / 4 - 1, -PH / 2, PW / 2 - 2, PH, 5); ctx.fill(); ctx.stroke(); ctx.restore();
+    }
+    return;
+  }
+  rr(ctx, pl.x, y, PW, PH, 6); ctx.fill(); ctx.stroke();
+  if (pl.type === 'b') {
+    ctx.beginPath(); ctx.moveTo(pl.x + PW / 2 - 4, y + 1); ctx.lineTo(pl.x + PW / 2 + 2, y + 6); ctx.lineTo(pl.x + PW / 2 - 2, y + PH - 1); ctx.stroke();
+  }
+  if (pl.spring) {
+    const sx = pl.x + pl.sx, sy = y - 9;
+    ctx.strokeStyle = COLORS.ink2; ctx.lineWidth = 1.5; ctx.beginPath();
+    ctx.moveTo(sx, sy + 9);
+    for (let i = 0; i < 4; i++) ctx.lineTo(sx + (i % 2 ? 0 : 16), sy + 9 - (i + 1) * 2);
+    ctx.stroke(); ctx.fillStyle = COLORS.ink2; ctx.fillRect(sx - 1, sy - 1, 18, 3);
+  }
+}
+
+function drawMonster(ctx, e, cam, t) {
+  const y = e.y - cam; if (y < -40 || y > H + 40) return;
+  ctx.save(); ctx.translate(e.x, y); if (e.dead) ctx.rotate(e.fall * 0.08);
+  ctx.lineWidth = 2; ctx.strokeStyle = COLORS.monsterEdge; ctx.fillStyle = COLORS.monster;
+  // horns
+  ctx.beginPath(); ctx.moveTo(-14, -12); ctx.lineTo(-18, -24); ctx.lineTo(-6, -15); ctx.moveTo(14, -12); ctx.lineTo(18, -24); ctx.lineTo(6, -15);
+  ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(0, 0, 22, 17, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  // wings flapping
+  const f = Math.sin(t * 0.3 + e.ph) * 5;
+  ctx.beginPath(); ctx.moveTo(-20, 0); ctx.lineTo(-34, -6 + f); ctx.lineTo(-24, 8); ctx.moveTo(20, 0); ctx.lineTo(34, -6 + f); ctx.lineTo(24, 8); ctx.stroke();
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.arc(-7, -4, 5, 0, 7); ctx.arc(7, -4, 5, 0, 7); ctx.fill();
+  ctx.fillStyle = COLORS.ink;
+  ctx.beginPath(); ctx.arc(-6, -3, 2, 0, 7); ctx.arc(8, -3, 2, 0, 7); ctx.fill();
+  ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; ctx.beginPath();
+  ctx.moveTo(-9, 7); for (let i = 0; i < 6; i++) ctx.lineTo(-9 + (i + 1) * 3, i % 2 ? 7 : 10); ctx.stroke();
+  ctx.restore();
+}
+
+function drawDoodler(ctx, x, y, face, alpha, throwing) {
+  const one = (ox) => {
+    ctx.save(); ctx.globalAlpha = alpha; ctx.translate(x + ox, y); ctx.scale(face, 1);
+    ctx.lineWidth = 2; ctx.strokeStyle = COLORS.bodyEdge;
+    // legs
+    ctx.beginPath(); for (const lx of [-9, -3, 3, 9]) { ctx.moveTo(lx, 12); ctx.lineTo(lx, 19); ctx.lineTo(lx + 3, 19); } ctx.stroke();
+    // body
+    ctx.fillStyle = COLORS.body; rr(ctx, -14, -18, 28, 31, 12); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = COLORS.pants; ctx.fillRect(-13, 5, 26, 7);
+    ctx.strokeStyle = COLORS.bodyEdge; ctx.beginPath(); ctx.moveTo(-13, 8); ctx.lineTo(13, 8); ctx.stroke();
+    // snout (points up while throwing, like the original)
+    ctx.fillStyle = COLORS.body; ctx.strokeStyle = COLORS.bodyEdge;
+    if (throwing) { rr(ctx, -4, -30, 9, 15, 3); ctx.fill(); ctx.stroke(); }
+    else { rr(ctx, 9, -12, 15, 9, 3); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.ellipse(24, -7.5, 2, 4.5, 0, 0, 7); ctx.fill(); ctx.stroke(); }
+    ctx.fillStyle = COLORS.ink; ctx.beginPath(); ctx.arc(throwing ? -5 : 3, -8, 2.4, 0, 7); ctx.fill();
+    ctx.restore();
+  };
+  one(0);
+  if (x < 26) one(W); else if (x > W - 26) one(-W); // half visible on the other edge while wrapping
+}
+
+function drawShot(ctx, s, cam) {
+  ctx.save(); ctx.translate(s.x, s.y - cam); ctx.rotate(s.a);
+  ctx.fillStyle = COLORS.ink; ctx.beginPath();
+  for (let i = 0; i < 8; i++) { const r = i % 2 ? 2.5 : 8, a = i * Math.PI / 4; ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); }
+  ctx.closePath(); ctx.fill(); ctx.restore();
+}
+
+function drawWorld(w, ghosts) {
+  const ctx = gctx, cam = w.cam;
+  drawPaper(ctx, cam);
+  for (const pl of w.plats) drawPlatform(ctx, pl, cam);
+  for (const e of w.enemies) drawMonster(ctx, e, cam, w.t);
+  if (ghosts) for (const a of ghosts) {
+    if (a.w === w || !a.w.alive) continue;
+    const gy = a.w.p.y - cam; if (gy < -30 || gy > H + 30) continue;
+    drawDoodler(ctx, a.w.p.x, gy, a.w.p.face, 0.2, false);
+  }
+  for (const s of w.shots) drawShot(ctx, s, cam);
+  drawDoodler(ctx, w.p.x, w.p.y - cam, w.p.face, 1, w.t - w.throwT < 10);
+  // score, handwritten like the original
+  ctx.fillStyle = 'rgba(255,255,255,0.82)'; ctx.fillRect(0, 0, W, 40);
+  ctx.strokeStyle = COLORS.line || '#c6d4df'; ctx.beginPath(); ctx.moveTo(0, 40.5); ctx.lineTo(W, 40.5); ctx.stroke();
+  ctx.fillStyle = COLORS.ink; ctx.font = '700 30px Caveat, cursive'; ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left'; ctx.fillText(String(Math.floor(w.maxH / 10)), 12, 21);
+  ctx.textAlign = 'right'; ctx.font = '600 22px Caveat, cursive'; ctx.fillStyle = COLORS.ink2;
+  ctx.fillText(w.kills ? '× ' + w.kills + ' монстр.' : '', W - 12, 21);
+}
+
+function drawOverlay(lines) {
+  const ctx = gctx;
+  ctx.fillStyle = 'rgba(255,255,255,0.86)'; ctx.fillRect(30, H / 2 - 80, W - 60, 150);
+  ctx.strokeStyle = COLORS.ink; ctx.lineWidth = 2; ctx.strokeRect(30, H / 2 - 80, W - 60, 150);
+  ctx.textAlign = 'center'; ctx.fillStyle = COLORS.ink;
+  ctx.font = '700 40px Caveat, cursive'; ctx.fillText(lines[0], W / 2, H / 2 - 40);
+  ctx.font = '500 16px "Golos Text", sans-serif'; ctx.fillStyle = COLORS.ink2;
+  lines.slice(1).forEach((l, i) => ctx.fillText(l, W / 2, H / 2 + i * 24));
+}
+
+// ---------- chart ----------
+const chartCv = $('chart'), chartBox = $('chartbox'), tip = $('tip');
+let chartCtx, chartW = 0, chartH = 0, chartGeom = null;
+function niceStep(max) { const raw = max / 4, p = Math.pow(10, Math.floor(Math.log10(raw))); const m = raw / p; return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p; }
+function drawChart() {
+  const r = chartBox.getBoundingClientRect();
+  if (r.width !== chartW || r.height !== chartH) { chartW = r.width; chartH = r.height; chartCtx = setupCanvas(chartCv, chartW, chartH); }
+  const ctx = chartCtx, hist = pop.history;
+  ctx.clearRect(0, 0, chartW, chartH);
+  const L = 44, Rr = 12, T = 8, B = 24, pw = chartW - L - Rr, ph = chartH - T - B;
+  const n = Math.max(hist.length, 10);
+  const maxV = Math.max(50, ...hist.map(h => h.best / 10));
+  const step = niceStep(maxV), top = Math.ceil(maxV / step) * step;
+  const X = i => L + (n === 1 ? 0 : i / (n - 1) * pw), Y = v => T + ph - v / top * ph;
+  ctx.font = '11px "JetBrains Mono", monospace'; ctx.fillStyle = COLORS.ink2; ctx.textBaseline = 'middle'; ctx.textAlign = 'right';
+  ctx.strokeStyle = COLORS.grid; ctx.lineWidth = 1;
+  for (let v = 0; v <= top + 1e-6; v += step) {
+    const y = Math.round(Y(v)) + 0.5; ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(L + pw, y); ctx.stroke();
+    ctx.fillText(v >= 1000 ? (v / 1000) + 'k' : String(v), L - 6, y);
+  }
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  const first = hist.length ? hist[0].gen : 1;
+  const ticks = Math.min(6, n);
+  for (let k = 0; k < ticks; k++) { const i = Math.round(k / (ticks - 1) * (n - 1)); ctx.fillText(String(first + i), X(i), T + ph + 6); }
+  if (!hist.length) {
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '600 20px Caveat, cursive';
+    ctx.fillText('первая точка появится после поколения 1', L + pw / 2, T + ph / 2);
+    chartGeom = null; return;
+  }
+  const line = (key, color, dash) => {
+    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.setLineDash(dash); ctx.lineJoin = 'round'; ctx.beginPath();
+    hist.forEach((h, i) => { const x = X(i), y = Y(h[key] / 10); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+    ctx.stroke(); ctx.setLineDash([]);
+    const i = hist.length - 1; ctx.fillStyle = color; ctx.beginPath(); ctx.arc(X(i), Y(hist[i][key] / 10), 4, 0, 7); ctx.fill();
+    ctx.strokeStyle = COLORS.paper; ctx.lineWidth = 2; ctx.stroke();
+  };
+  line('avg', COLORS.blue, [5, 4]);
+  line('best', COLORS.green, []);
+  chartGeom = { X, Y, n, L, pw, hist };
+}
+chartBox.addEventListener('mousemove', (ev) => {
+  if (!chartGeom) return;
+  const r = chartBox.getBoundingClientRect(), x = ev.clientX - r.left;
+  const { n, L, pw, hist, X, Y } = chartGeom;
+  const i = Math.round((x - L) / pw * (n - 1));
+  if (i < 0 || i >= hist.length) { tip.hidden = true; return; }
+  const h = hist[i];
+  tip.hidden = false;
+  tip.innerHTML = 'поколение ' + h.gen + '<br>лучший ' + Math.round(h.best / 10) + ' · среднее ' + Math.round(h.avg / 10) + '<br>монстров у лучшего ' + h.kills.toFixed(1);
+  tip.style.left = Math.min(Math.max(X(i), 90), r.width - 90) + 'px';
+  tip.style.top = Y(h.best / 10) + 'px';
+});
+chartBox.addEventListener('mouseleave', () => { tip.hidden = true; });
+
+// ---------- network ----------
+const netCv = $('net'), netBox = netCv.parentElement;
+let netCtx, netW = 0, netH = 0;
+const IN_GROUPS = [['скорость', 2], ['след. 1', 4], ['след. 2', 4], ['след. 3', 4], ['монстр', 3], ['бросок, 1', 2]];
+function drawNet(agent) {
+  const r = netBox.getBoundingClientRect();
+  if (r.width !== netW || r.height !== netH) { netW = r.width; netH = r.height; netCtx = setupCanvas(netCv, netW, netH); }
+  const ctx = netCtx; ctx.clearRect(0, 0, netW, netH);
+  if (!agent || !agent.inp) return;
+  const g = agent.g, xi = 74, xh = netW * 0.55, xo = netW - 64, T = 10, B = netH - 10;
+  const yi = i => T + (i + 0.5) * (B - T) / NI, yh = j => T + 14 + (j + 0.5) * (B - T - 28) / NH, yo = k => netH / 2 + (k ? 40 : -40);
+  const col = (w, a) => (w > 0 ? 'rgba(63,138,30,' : 'rgba(194,65,45,') + a.toFixed(3) + ')';
+  ctx.lineWidth = 1;
+  for (let j = 0; j < NH; j++) for (let i = 0; i < NI; i++) {
+    const w = g[j * NI + i], a = Math.min(0.85, Math.abs(w * agent.inp[i]) * 0.35);
+    if (a < 0.03) continue;
+    ctx.strokeStyle = col(w, a); ctx.beginPath(); ctx.moveTo(xi, yi(i)); ctx.lineTo(xh, yh(j)); ctx.stroke();
+  }
+  ctx.lineWidth = 2;
+  for (let k = 0; k < NO; k++) for (let j = 0; j < NH; j++) {
+    const w = g[O_W2 + k * NH + j], a = Math.min(0.9, Math.abs(w * agent.hid[j]) * 0.45);
+    if (a < 0.03) continue;
+    ctx.strokeStyle = col(w, a); ctx.beginPath(); ctx.moveTo(xh, yh(j)); ctx.lineTo(xo, yo(k)); ctx.stroke();
+  }
+  const node = (x, y, v, rad) => {
+    ctx.beginPath(); ctx.arc(x, y, rad, 0, 7);
+    ctx.fillStyle = v > 0 ? `rgba(63,138,30,${Math.min(1, Math.abs(v))})` : `rgba(194,65,45,${Math.min(1, Math.abs(v))})`;
+    ctx.fill(); ctx.strokeStyle = COLORS.ink; ctx.lineWidth = 1.2; ctx.stroke();
+  };
+  for (let i = 0; i < NI; i++) node(xi, yi(i), agent.inp[i], 4);
+  for (let j = 0; j < NH; j++) node(xh, yh(j), agent.hid[j], 6);
+  const steer = agent.steer, thr = agent.out[1] + agent.outM[1];
+  node(xo, yo(0), steer / 2, 10); node(xo, yo(1), thr / 2, 10);
+  ctx.font = '11px "Golos Text", sans-serif'; ctx.fillStyle = COLORS.ink2; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  let idx = 0;
+  for (const [name, cnt] of IN_GROUPS) {
+    const y0 = yi(idx), y1 = yi(idx + cnt - 1);
+    ctx.fillText(name, xi - 14, (y0 + y1) / 2);
+    ctx.strokeStyle = COLORS.line || '#c6d4df'; ctx.beginPath(); ctx.moveTo(xi - 9, y0 - 2); ctx.lineTo(xi - 9, y1 + 2); ctx.stroke();
+    idx += cnt;
+  }
+  ctx.textAlign = 'left'; ctx.fillStyle = COLORS.ink; ctx.font = '600 13px "Golos Text", sans-serif';
+  const dir = steer < -0.2 ? '← A' : steer > 0.2 ? 'D →' : '·';
+  ctx.fillText('A/D', xo + 16, yo(0) - 8); ctx.fillText('ЛКМ', xo + 16, yo(1) - 8);
+  ctx.font = '12px "JetBrains Mono", monospace'; ctx.fillStyle = COLORS.ink2;
+  ctx.fillText(dir, xo + 16, yo(0) + 9); ctx.fillText(thr > 0 ? 'бросок' : '—', xo + 16, yo(1) + 9);
+}
+
+// ---------- loop ----------
+function pickLeader() {
+  let best = null;
+  for (const a of pop.agents) if (a.w.alive && (!best || a.w.maxH > best.w.maxH)) best = a;
+  if (!follow || !follow.w.alive || !pop.agents.includes(follow)) follow = best;
+  else if (best && best.w.maxH > follow.w.maxH + 400) follow = best;
+  return follow || pop.agents[0];
+}
+
+function stepAI(n, budgetMs) {
+  const t0 = performance.now();
+  for (let i = 0; i < n; i++) {
+    if (pop.tick()) { save(); drawChart(); }
+    if (budgetMs && performance.now() - t0 > budgetMs) break;
+  }
+}
+
+function stepHuman() {
+  const w = human; if (!w.alive) return;
+  const move = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
+  if (pendingThrow) { w.step(move, true, pendingThrow.x, pendingThrow.y + w.cam); pendingThrow = null; }
+  else w.step(move, false);
+}
+
+const fmt = n => Math.round(n).toLocaleString('ru-RU');
+let lastUI = 0;
+function updateUI(leader) {
+  const now = performance.now(); if (now - lastUI < 120) return; lastUI = now;
+  $('sGen').textContent = pop.gen;
+  $('sRound').textContent = 'заезд ' + (pop.round + 1) + ' из ' + ROUNDS;
+  $('sAlive').textContent = pop.aliveCount();
+  $('sNow').textContent = fmt(leader.w.maxH / 10);
+  $('sNowK').textContent = 'монстров: ' + leader.w.kills;
+  $('sBest').textContent = fmt(pop.bestH / 10);
+  $('sBestK').textContent = pop.history.length ? 'за 3 заезда, поколение ' + bestGen() : 'ещё нет';
+  if (mode === 'ai') {
+    const last = pop.history[pop.history.length - 1];
+    $('status').textContent = paused ? 'Пауза' :
+      'Камера следит за лидером' + (last ? ' · прошлое поколение: лучший ' + fmt(last.best / 10) + ', среднее ' + fmt(last.avg / 10) : '');
+  }
+}
+let bestGenCache = { len: -1, gen: 1 };
+function bestGen() {
+  if (bestGenCache.len !== pop.history.length) {
+    let b = pop.history[0]; for (const h of pop.history) if (h.best > b.best) b = h;
+    bestGenCache = { len: pop.history.length, gen: b.gen };
+  }
+  return bestGenCache.gen;
+}
+
+function frame() {
+  if (mode === 'ai') {
+    if (!paused) speed === 0 ? stepAI(1e6, 14) : stepAI(speed);
+    const leader = pickLeader();
+    drawWorld(leader.w, showGhosts ? pop.agents : null);
+    drawNet(leader);
+    updateUI(leader);
+  } else {
+    if (!paused) stepHuman();
+    drawWorld(human, null);
+    if (!human.alive) drawOverlay(['Конец игры', 'Высота ' + fmt(human.maxH / 10) + ' · монстров ' + human.kills, 'Пробел или клик — ещё раз']);
+    $('status').textContent = paused ? 'Пауза' : 'A / D — влево и вправо, ЛКМ по экрану — бросок. Край экрана пропускает насквозь.';
+  }
+  requestAnimationFrame(frame);
+}
+
+// ---------- controls ----------
+document.querySelectorAll('[data-speed]').forEach(b => b.addEventListener('click', () => {
+  speed = +b.dataset.speed;
+  document.querySelectorAll('[data-speed]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+}));
+function setMode(m) {
+  mode = m; $('modeAI').setAttribute('aria-pressed', String(m === 'ai')); $('modeMe').setAttribute('aria-pressed', String(m === 'me'));
+  if (m === 'me' && (!human || !human.alive)) human = new World((Math.random() * 4294967296) >>> 0, false);
+  game.focus();
+}
+$('modeAI').addEventListener('click', () => setMode('ai'));
+$('modeMe').addEventListener('click', () => setMode('me'));
+$('pause').addEventListener('click', (e) => { paused = !paused; e.currentTarget.setAttribute('aria-pressed', String(paused)); });
+$('ghosts').addEventListener('click', (e) => { showGhosts = !showGhosts; e.currentTarget.setAttribute('aria-pressed', String(showGhosts)); });
+let armTimer = null;
+$('reset').addEventListener('click', (e) => {
+  const b = e.currentTarget;
+  if (!b.classList.contains('armed')) {
+    b.classList.add('armed'); b.textContent = 'Точно? Нажмите ещё раз';
+    clearTimeout(armTimer); armTimer = setTimeout(() => { b.classList.remove('armed'); b.textContent = 'Начать обучение заново'; }, 3000);
+    return;
+  }
+  clearTimeout(armTimer); b.classList.remove('armed'); b.textContent = 'Начать обучение заново';
+  try { localStorage.removeItem(SAVE_KEY); } catch (err) { /* ignore */ }
+  pop = new Population(60); follow = null; bestGenCache.len = -1; drawChart();
+});
+
+const KEYMAP = { KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right' };
+window.addEventListener('keydown', (e) => {
+  if (mode !== 'me') return;
+  if (KEYMAP[e.code]) { keys[KEYMAP[e.code]] = true; e.preventDefault(); }
+  if ((e.code === 'Space' || e.code === 'Enter') && !human.alive) { human = new World((Math.random() * 4294967296) >>> 0, false); e.preventDefault(); }
+});
+window.addEventListener('keyup', (e) => { if (KEYMAP[e.code]) keys[KEYMAP[e.code]] = false; });
+window.addEventListener('blur', () => { keys.left = keys.right = false; });
+game.addEventListener('pointerdown', (e) => {
+  if (mode !== 'me') return;
+  if (!human.alive) { human = new World((Math.random() * 4294967296) >>> 0, false); return; }
+  const r = game.getBoundingClientRect();
+  pendingThrow = { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height };
+});
+game.tabIndex = 0;
+window.addEventListener('resize', () => drawChart());
+
+function start(data) {
+  const saved = (data && data.pop) || loadSaved();
+  pop = new Population(60, saved);
+  window.claude?.hot?.snapshot?.(() => ({ pop: pop.serialize() }));
+  drawChart();
+  requestAnimationFrame(frame);
+}
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => drawChart());
+window.claude?.hot?.ready ? window.claude.hot.ready(start) : start(window.claude?.hot?.data ?? {});
+</script>
