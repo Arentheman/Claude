@@ -327,7 +327,7 @@ class Worker:
             if self.st.quit:
                 break
             fit = tr.fitness()
-            print(f"Попытка: высота {tr.height_label()} px, монстров {tr.kills}, очки {fit:.0f}")
+            print(f"Попытка: высота ≈{tr.meters():.0f} м, монстров {tr.kills}, очки {fit:.0f}")
             if self.mode == "train":
                 pop.report(fit, tr.max_h, tr.kills)
             self.stats(gen=pop.gen, best=pop.best_fit, last=fit)

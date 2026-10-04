@@ -112,6 +112,10 @@ class Detector:
         bg = np.median(small, axis=1, keepdims=True)
         diff = np.abs(small - bg).sum(axis=2)
         darker = bg.sum(axis=2) - small.sum(axis=2)
+        # Ночью фон тёмный и объекты могут быть светлее его — там важна сама разница с фоном
+        night = bg.sum(axis=2)[:, 0] < 330
+        if night.any():
+            darker[night] = np.maximum(darker[night], diff[night])
         mask = ((diff > 60) & (darker > 30)).astype(np.uint8)
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
         hsv = cv2.cvtColor(small8, cv2.COLOR_BGR2HSV)
@@ -149,14 +153,15 @@ class Detector:
             x, y, w, h, a = st[i]
             fw, fh = w / s, h / s
             cy = (y + h / 2) / s
-            if cy < self.top_ignore * H or not (0.045 * W <= fw <= 0.3 * W and 0.045 * W <= fh <= 0.3 * W):
+            # внизу слева бывает значок поверх игры — нижние 3% экрана не смотрим
+            if cy < self.top_ignore * H or cy > 0.97 * H or not (0.045 * W <= fw <= 0.3 * W and 0.045 * W <= fh <= 0.3 * W):
                 continue
             if a / float(w * h) < 0.3:
                 continue
             comp = lab[y:y + h, x:x + w] == i
+            px = hsv[y:y + h, x:x + w][comp].astype(np.int16)
             if darker[y:y + h, x:x + w][comp].mean() < 150:
                 continue
-            px = hsv[y:y + h, x:x + w][comp].astype(np.int16)
             hh, ss, vv = px[:, 0], px[:, 1], px[:, 2]
             f = {
                 "pink": float(np.mean(((hh <= 10) | (hh >= 165)) & (ss > 60))),
@@ -170,19 +175,55 @@ class Detector:
                 kind = "ghost"
             elif f["pink"] > 0.45:
                 kind = "pig"
-            elif 0.07 <= f["pink"] <= 0.42 and f["skin"] > 0.12:
+            elif 0.09 <= f["pink"] <= 0.42 and f["skin"] > 0.12:
                 kind = "player?"
-            elif f["pink"] < 0.05:
+            elif f["pink"] < 0.09:
                 kind = "item"  # пружины, ракеты и прочие бонусы
             else:
                 kind = "enemy"
             blobs.append({"x": (x + w / 2) / s, "y": cy, "w": fw, "h": fh, "kind": kind, **f})
+
+        for g in self._ghosts(bgr, W, H):
+            blobs = [b for b in blobs if abs(b["x"] - g["x"]) + abs(b["y"] - g["y"]) > 0.08 * W]
+            blobs.append(g)
 
         player = self._pick_player([b for b in blobs if b["kind"] == "player?"], W, H)
         enemies = [b for b in blobs if b is not player and b["kind"] in ("pig", "ghost", "hole", "enemy", "player?")]
         if player is not None:
             self.prev_player = (player["x"], player["y"])
         return {"W": W, "H": H, "plats": plats, "player": player, "enemies": enemies}
+
+    _ghost_tpl = None
+
+    def _ghosts(self, bgr, W, H):
+        """Призраки светло-голубые и почти не отличаются от неба по цвету, поэтому ищем их
+        по форме — образцу из записи игры (sprites/ghost.png). Совпадение у настоящих
+        призраков 0.74–0.98, у всего остального не выше 0.45."""
+        if Detector._ghost_tpl is None:
+            tpl = cv2.imread(os.path.join(BUNDLE, "sprites", "ghost.png"))
+            msk = cv2.imread(os.path.join(BUNDLE, "sprites", "ghost_mask.png"), 0)
+            Detector._ghost_tpl = (tpl, msk) if tpl is not None and msk is not None else False
+        if not Detector._ghost_tpl:
+            return []
+        tpl, msk = Detector._ghost_tpl
+        k = 0.25 * W / 480.0  # образец снят при ширине игры 480
+        t = cv2.resize(tpl, None, fx=k, fy=k, interpolation=cv2.INTER_AREA)
+        m = cv2.resize(msk, (t.shape[1], t.shape[0]), interpolation=cv2.INTER_NEAREST)
+        sm = cv2.resize(bgr, None, fx=0.25, fy=0.25, interpolation=cv2.INTER_AREA)
+        if sm.shape[0] < t.shape[0] or sm.shape[1] < t.shape[1]:
+            return []
+        r = np.nan_to_num(cv2.matchTemplate(sm, t, cv2.TM_CCOEFF_NORMED, mask=m), nan=0, posinf=0, neginf=0)
+        out = []
+        for _ in range(3):
+            _, mx, _, (lx, ly) = cv2.minMaxLoc(r)
+            if mx < 0.6:
+                break
+            cx, cy = (lx + t.shape[1] / 2) / 0.25, (ly + t.shape[0] / 2) / 0.25
+            if cy > self.top_ignore * H:
+                out.append({"x": cx, "y": cy, "w": t.shape[1] / 0.25, "h": t.shape[0] / 0.25, "kind": "ghost",
+                            "pink": 0.0, "purple": 0.0, "blue": 1.0, "skin": 0.0})
+            r[max(0, ly - t.shape[0]):ly + t.shape[0], max(0, lx - t.shape[1]):lx + t.shape[1]] = 0
+        return out
 
     def _pick_player(self, cands, W, H):
         best, best_score = None, -1e9
@@ -213,6 +254,7 @@ def wdx(a, b, W):
 # ============================================================================
 # Слежение: прокрутка, скорость, прыжки и входы для сети
 # ============================================================================
+PX_PER_M = 19.7      # пикселей подъёма на игровой метр при высоте окна 1080
 SIM_APEX = 196.0      # высота прыжка в симуляторе, px
 SIM_PERIOD = 70.0     # длительность прыжка в симуляторе, тики
 SIM_W = 400.0
@@ -362,7 +404,8 @@ class Tracker:
         inp = [vx_sim / SIM_MAXVX, vy_sim / 15.0]
         feet = p["y"] + p["h"] / 2
         base_wy = self.base[1] if self.base else feet - self.scroll
-        nxt = [pl for pl in det["plats"] if pl["y"] - self.scroll < base_wy - 0.01 * H and pl.get("type") != "b"]
+        # Коричневые «ломающиеся» платформы в этой игре сразу восстанавливаются — на них можно прыгать
+        nxt = [pl for pl in det["plats"] if pl["y"] - self.scroll < base_wy - 0.01 * H]
         nxt.sort(key=lambda pl: -pl["y"])
         for i in range(3):
             if i < len(nxt):
@@ -392,6 +435,10 @@ class Tracker:
 
     def height_label(self):
         return int(self.max_h)
+
+    def meters(self):
+        # По экрану проигрыша: 7335 px подъёма = 373 м
+        return self.max_h * (1080.0 / self.H) / PX_PER_M
 
 
 # ============================================================================
@@ -698,6 +745,10 @@ def play_run(screen, ctl, hk, genome, show=True, info="", act=True, on_frame=Non
             inp, nxt, enemy = tr.inputs(det, t)
             if genome is not None:
                 move, throw, steer = decide(genome, inp)
+                # Попытка начинается с персонажа в воздухе над стартовой платформой:
+                # до первого приземления стоим на месте, иначе он пролетает мимо неё
+                if not tr.bounces and t - t_start < 3:
+                    move = 0
             if act:
                 ctl.move(move)
                 if throw and enemy and t - tr.last_throw > COOLDOWN_S:
