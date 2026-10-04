@@ -601,11 +601,11 @@ def play_run(screen, ctl, hk, genome, show=True, info="", act=True, on_frame=Non
         img = screen.grab()
         det = det_.detect(img)
         tr.update(det, t)
-        move, throw, nxt, enemy = 0, False, [], None
+        move, throw, nxt, enemy, steer, inp = 0, False, [], None, 0.0, None
         if det["player"] is not None:
             inp, nxt, enemy = tr.inputs(det, t)
             if genome is not None:
-                move, throw, _ = decide(genome, inp)
+                move, throw, steer = decide(genome, inp)
             if act:
                 ctl.move(move)
                 if throw and enemy and t - tr.last_throw > COOLDOWN_S:
@@ -615,9 +615,11 @@ def play_run(screen, ctl, hk, genome, show=True, info="", act=True, on_frame=Non
         else:
             ctl.release()
         frames += 1
-        if on_frame is not None and frames % 2 == 0:
+        if on_frame is not None:
             fps = frames / max(t - t_start, 1e-3)
-            on_frame(draw_debug(img, det, tr, nxt, enemy, move, throw, f"{info} {fps:.0f} fps"), tr)
+            on_frame({"t": t, "img": img, "det": det, "tr": tr, "nxt": nxt, "enemy": enemy, "move": move,
+                      "throw": throw, "steer": float(steer), "inp": inp, "info": f"{info} {fps:.0f} fps",
+                      "proc_ms": (time.time() - t) * 1000})
         elif show:
             fps = frames / max(t - t_start, 1e-3)
             cv2.imshow(DEBUG_WINDOW, draw_debug(img, det, tr, nxt, enemy, move, throw, f"{info} {fps:.0f} fps"))

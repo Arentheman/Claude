@@ -20,6 +20,121 @@ from PIL import Image, ImageTk
 import bot
 
 PREVIEW_H = 520
+RECORD_FPS = 12
+RECORD_MAX_S = 300
+RAW_EVERY_S = 1.0
+
+
+def ascii_dir(preferred, name):
+    """VideoWriter в OpenCV не открывает пути с кириллицей — подбираем папку без неё."""
+    import tempfile
+    for d in (preferred, tempfile.gettempdir(), os.environ.get("PUBLIC", ""), "C:\\Users\\Public"):
+        if d and d.isascii() and os.path.isdir(d):
+            return os.path.join(d, name)
+    return os.path.join(preferred, name)
+
+
+class Recorder:
+    """Запись для анализа: видео с рамками распознавания, исходные кадры раз в секунду
+    и покадровый журнал (что бот увидел, что подал на вход сети и что нажал).
+    В конце всё складывается в один zip рядом с программой."""
+
+    def __init__(self):
+        import zipfile  # noqa: F401  (проверяем, что модуль есть, до начала записи)
+        self.lock = threading.Lock()
+        self.active = False
+
+    def start(self):
+        # Имена файлов латиницей: OpenCV на Windows не пишет видео по путям с кириллицей
+        with self.lock:
+            stamp = time.strftime("%Y%m%d_%H%M%S")
+            self.dir = os.path.join(bot.HERE, "recordings", f"rec_{stamp}")
+            os.makedirs(os.path.join(self.dir, "frames"), exist_ok=True)
+            self.video = None
+            self.jsonl = open(os.path.join(self.dir, "telemetry.jsonl"), "w", encoding="utf-8")
+            self.logf = open(os.path.join(self.dir, "log.txt"), "w", encoding="utf-8")
+            self.t0 = time.time()
+            self.last_video = 0.0
+            self.last_raw = 0.0
+            self.frames = 0
+            self.active = True
+        print("Запись началась")
+
+    def log(self, line):
+        with self.lock:
+            if self.active:
+                self.logf.write(time.strftime("%H:%M:%S ") + line + "\n")
+
+    def frame(self, f, annotated):
+        with self.lock:
+            if not self.active:
+                return
+            t = f["t"]
+            tr, det = f["tr"], f["det"]
+            p = det["player"]
+            row = {
+                "t": round(t - self.t0, 3), "proc_ms": round(f["proc_ms"], 1),
+                "player": [round(p[k]) for k in ("x", "y", "w", "h")] if p else None,
+                "plats": [[round(q["x"]), round(q["y"])] for q in det["plats"]],
+                "enemies": [[round(e["x"]), round(e["y"])] for e in det["enemies"]],
+                "move": f["move"], "throw": bool(f["throw"]), "steer": round(f["steer"], 3),
+                "inp": [round(float(v), 3) for v in f["inp"]] if f["inp"] is not None else None,
+                "scroll": round(tr.scroll, 1), "vx": round(tr.vx, 1), "vy": round(tr.vy, 1),
+                "apex": round(tr.apex, 1), "period": round(tr.period, 3),
+                "base": [round(v, 1) for v in tr.base] if tr.base else None,
+                "height": round(tr.max_h), "kills": tr.kills,
+            }
+            self.jsonl.write(json.dumps(row, ensure_ascii=False) + "\n")
+            self.frames += 1
+            if t - self.last_video >= 1.0 / RECORD_FPS:
+                self.last_video = t
+                h, w = annotated.shape[:2]
+                small = cv2.resize(annotated, (w // 4 * 2, h // 4 * 2), interpolation=cv2.INTER_AREA)
+                if self.video is None:
+                    self.video_path = ascii_dir(self.dir, f"rec_{int(self.t0)}_video.mp4")
+                    self.video = cv2.VideoWriter(self.video_path,
+                                                 cv2.VideoWriter_fourcc(*"mp4v"), RECORD_FPS,
+                                                 (small.shape[1], small.shape[0]))
+                self.video.write(small)
+            if t - self.last_raw >= RAW_EVERY_S:
+                self.last_raw = t
+                cv2.imencode(".jpg", f["img"], [cv2.IMWRITE_JPEG_QUALITY, 85])[1].tofile(
+                    os.path.join(self.dir, "frames", f"{t - self.t0:07.1f}.jpg"))
+            over = t - self.t0 > RECORD_MAX_S
+        if over:
+            print(f"Запись остановлена: прошло {RECORD_MAX_S // 60} минут")
+            return self.stop()
+
+    def stop(self):
+        import shutil
+        import zipfile
+        with self.lock:
+            if not self.active:
+                return None
+            self.active = False
+            if self.video is not None:
+                self.video.release()
+                if os.path.exists(self.video_path):
+                    shutil.move(self.video_path, os.path.join(self.dir, "video.mp4"))
+            self.jsonl.close()
+            self.logf.close()
+            for name in ("config.json", "population.json"):
+                src = os.path.join(bot.HERE, name)
+                if os.path.exists(src):
+                    shutil.copy(src, self.dir)
+            zpath = self.dir + ".zip"
+            with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
+                for root, _, files in os.walk(self.dir):
+                    for fn in files:
+                        full = os.path.join(root, fn)
+                        z.write(full, os.path.relpath(full, os.path.dirname(self.dir)))
+            shutil.rmtree(self.dir, ignore_errors=True)
+            frames = self.frames
+        print(f"Запись сохранена ({frames} кадров): {zpath}")
+        return zpath
+
+
+RECORDER = None
 
 
 class State:
@@ -35,6 +150,8 @@ class LogWriter:
     def write(self, s):
         if s.strip():
             self.q.put(("log", s.rstrip()))
+            if RECORDER is not None:
+                RECORDER.log(s.rstrip())
 
     def flush(self):
         pass
@@ -218,6 +335,9 @@ class App:
         self.state = State()
         self.worker = None
         self.frame = None
+        self.nframe = 0
+        global RECORDER
+        self.recorder = RECORDER = Recorder()
         self.photo = None
         sys.stdout = sys.stderr = LogWriter(self.q)
 
@@ -249,6 +369,8 @@ class App:
         self.b_stop = ttk.Button(btns, text="■  Стоп (F10)", style="Big.TButton", command=self.stop, state="disabled")
         for i, b in enumerate((self.b_train, self.b_play, self.b_watch, self.b_stop)):
             b.grid(row=i // 2, column=i % 2, sticky="ew", padx=(0, 8), pady=(0, 8))
+        self.b_rec = ttk.Button(btns, text="●  Записать для анализа", style="Big.TButton", command=self.toggle_record)
+        self.b_rec.grid(row=2, column=0, columnspan=2, sticky="ew", padx=(0, 8))
 
         self.status = tk.Label(right, text="Готов.", font=("Segoe UI", 12), bg="#ffffff", fg="#1d2733",
                                justify="left", anchor="nw", wraplength=380, padx=12, pady=10, relief="solid", bd=1)
@@ -325,8 +447,34 @@ class App:
             print("Окно бота не помещается рядом с игрой — сдвиньте его, чтобы оно не закрывало игру")
         self.root.geometry(f"+{x}+{max(0, reg['top'])}")
 
-    def set_frame(self, img, tr):
-        self.frame = img  # рисуется в главном потоке в poll()
+    def set_frame(self, f):
+        """Вызывается рабочим потоком на каждом кадре."""
+        self.nframe += 1
+        need_preview = self.nframe % 2 == 0
+        if not (need_preview or self.recorder.active):
+            return
+        img = bot.draw_debug(f["img"], f["det"], f["tr"], f["nxt"], f["enemy"], f["move"], f["throw"], f["info"])
+        if self.recorder.active:
+            self.recorder.frame(f, img)
+        if need_preview:
+            self.frame = img  # рисуется в главном потоке в poll()
+
+    def toggle_record(self):
+        if self.recorder.active:
+            path = self.recorder.stop()
+            self.b_rec.config(text="●  Записать для анализа")
+            if path:
+                self.status.config(text="Запись сохранена. Пришлите этот файл в чат:\n" + path)
+                try:
+                    os.startfile(os.path.dirname(path))  # открыть папку в проводнике (Windows)
+                except Exception:
+                    pass
+        else:
+            self.recorder.start()
+            self.b_rec.config(text="■  Остановить запись")
+            if not self.worker:
+                self.status.config(text="Запись идёт. Нажмите «Учиться», «Играть» или «Проверить зрение» — "
+                                        "запишется всё, что видит бот. Максимум 5 минут.")
 
     def poll(self):
         try:
@@ -365,6 +513,8 @@ class App:
 
     def on_close(self):
         self.state.quit = True
+        if self.recorder.active:
+            self.recorder.stop()
         self.root.after(300, self.root.destroy)
 
 
