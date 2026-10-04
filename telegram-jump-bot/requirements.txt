@@ -2,4 +2,5 @@ numpy
 opencv-python
 mss
 pynput
+pillow
 pydirectinput; sys_platform == "win32"

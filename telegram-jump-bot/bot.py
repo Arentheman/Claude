@@ -25,10 +25,15 @@ import time
 import cv2
 import numpy as np
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+if getattr(sys, "frozen", False):
+    # Собранный .exe: свои файлы кладём рядом с ним, а предобученные сети лежат внутри
+    HERE = os.path.dirname(sys.executable)
+    BUNDLE = getattr(sys, "_MEIPASS", HERE)
+else:
+    HERE = BUNDLE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(HERE, "config.json")
 STATE_PATH = os.path.join(HERE, "population.json")
-PRETRAINED_PATH = os.path.join(HERE, "pretrained.json")
+PRETRAINED_PATH = os.path.join(BUNDLE, "pretrained.json")
 DEBUG_WINDOW = "Что видит бот"
 
 
@@ -330,28 +335,45 @@ class Screen:
         return img[:, :, :3]
 
 
-def find_game_region(img):
-    """Игра — светлая вертикальная полоса между затемнёнными полями Telegram."""
+def find_game_regions(img):
+    """Кандидаты на область игры: светлые вертикальные полосы между тёмными полями Telegram.
+    Возвращает несколько вариантов — какой из них игра, проверяет поиск платформ."""
     col = img.astype(np.int16).mean(axis=(0, 2))
-    thr = (col.min() + col.max()) / 2
-    bright = col > thr
-    best, cur, start = (0, 0), 0, 0
-    for i, v in enumerate(list(bright) + [False]):
-        if v:
-            if cur == 0:
+    out = []
+    for frac in (0.5, 0.35, 0.65):
+        thr = col.min() + (col.max() - col.min()) * frac
+        bright = list(col > thr) + [False]
+        start = None
+        for i, v in enumerate(bright):
+            if v and start is None:
                 start = i
-            cur += 1
-        else:
-            if cur > best[1] - best[0]:
-                best = (start, start + cur)
-            cur = 0
-    x0, x1 = best
-    if x1 - x0 < 100:
-        return None
-    rows = img[:, x0:x1].astype(np.int16).mean(axis=(1, 2))
-    rb = rows > (rows.min() + rows.max()) / 2 if rows.max() - rows.min() > 60 else np.ones_like(rows, bool)
-    ys = np.where(rb)[0]
-    return {"left": int(x0), "top": int(ys[0]), "width": int(x1 - x0), "height": int(ys[-1] - ys[0] + 1)}
+            elif not v and start is not None:
+                x0, x1 = start, i
+                start = None
+                if x1 - x0 < 150:
+                    continue
+                rows = img[:, x0:x1].astype(np.int16).mean(axis=(1, 2))
+                if rows.max() - rows.min() > 60:
+                    ys = np.where(rows > (rows.min() + rows.max()) / 2)[0]
+                else:
+                    ys = np.arange(len(rows))
+                if len(ys) < 200:
+                    continue
+                r = {"left": int(x0), "top": int(ys[0]), "width": int(x1 - x0), "height": int(ys[-1] - ys[0] + 1)}
+                if r not in out:
+                    out.append(r)
+    return out
+
+
+def find_game_region(img):
+    """Лучший кандидат: тот, где нашлось больше всего платформ."""
+    best, best_n = None, 2
+    for r in find_game_regions(img):
+        crop = img[r["top"]:r["top"] + r["height"], r["left"]:r["left"] + r["width"]]
+        n = len(Detector().detect(crop)["plats"])
+        if n > best_n:
+            best, best_n = r, n
+    return best
 
 
 class Controls:
@@ -563,7 +585,7 @@ def draw_debug(img, det, tr, nxt, enemy, move, throw, info=""):
     return out
 
 
-def play_run(screen, ctl, hk, genome, show=True, info="", act=True):
+def play_run(screen, ctl, hk, genome, show=True, info="", act=True, on_frame=None):
     det_ = Detector()
     region = screen.region
     tr = Tracker(region["width"], region["height"])
@@ -593,7 +615,10 @@ def play_run(screen, ctl, hk, genome, show=True, info="", act=True):
         else:
             ctl.release()
         frames += 1
-        if show:
+        if on_frame is not None and frames % 2 == 0:
+            fps = frames / max(t - t_start, 1e-3)
+            on_frame(draw_debug(img, det, tr, nxt, enemy, move, throw, f"{info} {fps:.0f} fps"), tr)
+        elif show:
             fps = frames / max(t - t_start, 1e-3)
             cv2.imshow(DEBUG_WINDOW, draw_debug(img, det, tr, nxt, enemy, move, throw, f"{info} {fps:.0f} fps"))
             if cv2.waitKey(1) & 0xFF == 27:
