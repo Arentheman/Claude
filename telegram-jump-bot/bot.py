@@ -51,16 +51,16 @@ def set_dpi_aware():
 
 
 # ============================================================================
-# Нейросеть: 19 входов -> 12 tanh -> 2 выхода (руль, бросок).
+# Нейросеть: 22 входа -> 12 tanh -> 2 выхода (руль, бросок).
 # Раскладка весов совпадает с pretrain/sim.js, поэтому предобученные сети подходят.
 # ============================================================================
-NI, NH, NO = 19, 12, 2
+NI, NH, NO = 22, 12, 2
 O_B1 = NI * NH
 O_W2 = O_B1 + NH
 O_B2 = O_W2 + NH * NO
 NG = O_B2 + NO
 # Входы, которые меняют знак при зеркальном отражении сцены (все «смещения по X»)
-MIRROR = [0, 2, 4, 6, 8, 10, 12, 14]
+MIRROR = [0, 2, 4, 6, 8, 10, 12, 14, 17]
 DEADZONE = 0.05
 
 
@@ -168,8 +168,11 @@ class Detector:
                 "purple": float(np.mean((hh >= 120) & (hh < 165) & (ss > 60))),
                 "blue": float(np.mean((hh >= 85) & (hh < 120) & (ss > 40))),
                 "skin": float(np.mean((hh >= 5) & (hh <= 25) & (ss > 40) & (vv > 90))),
+                "green": float(np.mean((hh >= 35) & (hh <= 85) & (ss > 60))),
             }
-            if f["purple"] > 0.4:
+            if f["green"] > 0.1 and fw / fh < 0.65:
+                kind = "item"  # ракета: узкая, с зелёным носом (у персонажа зелёного ~0.04)
+            elif f["purple"] > 0.4:
                 kind = "hole"
             elif f["blue"] > 0.5:
                 kind = "ghost"
@@ -221,7 +224,7 @@ class Detector:
             cx, cy = (lx + t.shape[1] / 2) / 0.25, (ly + t.shape[0] / 2) / 0.25
             if cy > self.top_ignore * H:
                 out.append({"x": cx, "y": cy, "w": t.shape[1] / 0.25, "h": t.shape[0] / 0.25, "kind": "ghost",
-                            "pink": 0.0, "purple": 0.0, "blue": 1.0, "skin": 0.0})
+                            "pink": 0.0, "purple": 0.0, "blue": 1.0, "skin": 0.0, "green": 0.0})
             r[max(0, ly - t.shape[0]):ly + t.shape[0], max(0, lx - t.shape[1]):lx + t.shape[1]] = 0
         return out
 
@@ -254,7 +257,7 @@ def wdx(a, b, W):
 # ============================================================================
 # Слежение: прокрутка, скорость, прыжки и входы для сети
 # ============================================================================
-PX_PER_M = 19.7      # пикселей подъёма на игровой метр при высоте окна 1080
+PX_PER_M = 20.5      # пикселей подъёма на игровой метр при высоте окна 1080
 SIM_APEX = 196.0      # высота прыжка в симуляторе, px
 SIM_PERIOD = 70.0     # длительность прыжка в симуляторе, тики
 SIM_W = 400.0
@@ -285,6 +288,7 @@ class Tracker:
         self.throws = 0
         self.kills = 0
         self.tracks = []         # враги, за которыми следим: x, y, сколько кадров видели, вид
+        self.dead_marks = []     # где и когда засчитали убийство (x, мировой y, t)
         self.last_seen = time.time()
 
     def _scroll_delta(self, plats):
@@ -359,6 +363,13 @@ class Tracker:
                 new.append({"x": e["x"], "y": e["y"], "n": tr["n"] + 1, "miss": 0, "kind": e["kind"]})
             else:
                 new.append({"x": e["x"], "y": e["y"], "n": 1, "miss": 0, "kind": e["kind"]})
+                # Враг, «убитый» недавно, снова на том же месте — значит, рамка просто мигнула
+                wy = e["y"] - self.scroll
+                for m in self.dead_marks:
+                    if t - m[2] < 4 and abs(wdx(m[0], e["x"], W)) < 0.1 * W and abs(m[1] - wy) < 0.08 * H:
+                        self.dead_marks.remove(m)
+                        self.kills = max(0, self.kills - 1)
+                        break
         for i, tr in enumerate(self.tracks):
             if i in used:
                 continue
@@ -368,6 +379,7 @@ class Tracker:
             elif (tr["n"] >= 4 and tr["kind"] != "hole" and 0.12 * H < tr["y"] < 0.85 * H
                   and t - self.last_throw < 0.8 and self.kills < self.throws):
                 self.kills += 1
+                self.dead_marks.append((tr["x"], tr["y"] - self.scroll, t))
         self.tracks = new
 
     def _on_bounce(self, det, p, wy, t):
@@ -394,7 +406,7 @@ class Tracker:
         self.min_wy_since_bounce = wy
 
     def inputs(self, det, t):
-        """19 входов в тех же единицах, что и в симуляторе."""
+        """22 входа в тех же единицах, что и в симуляторе."""
         W, H = self.W, self.H
         p = det["player"]
         kv = SIM_APEX / self.apex              # реальные px по вертикали -> px симулятора
@@ -413,6 +425,13 @@ class Tracker:
                 inp += [wdx(p["x"], pl["x"], W) / (W / 2), (pl["y"] - feet) * kv / 300.0, 0.0, 1.0]
             else:
                 inp += [0.0, 0.0, 0.0, 0.0]
+        # Ближайшая платформа под ногами: куда можно спастись, если промахнулся мимо цели
+        below = [pl for pl in det["plats"] if pl["y"] >= feet]
+        if below:
+            pl = min(below, key=lambda q: q["y"])
+            inp += [wdx(p["x"], pl["x"], W) / (W / 2), (pl["y"] - feet) * kv / 300.0, 1.0]
+        else:
+            inp += [0.0, 0.0, 0.0]
         enemy = self.nearest_enemy(det)
         if enemy:
             inp += [wdx(p["x"], enemy["x"], W) / (W / 2), (enemy["y"] - p["y"]) * kv / 300.0, 1.0]
@@ -437,8 +456,8 @@ class Tracker:
         return int(self.max_h)
 
     def meters(self):
-        # По экрану проигрыша: 7335 px подъёма = 373 м
-        return self.max_h * (1080.0 / self.H) / PX_PER_M
+        # Сверено со счётчиком игры: старт показывает 7 м, дальше ~20.5 px подъёма на метр
+        return 7 + self.max_h * (1080.0 / self.H) / PX_PER_M
 
 
 # ============================================================================
@@ -605,7 +624,7 @@ def mouse_position():
 # Эволюция
 # ============================================================================
 # Версия смысла входов сети: при её смене старый population.json не подходит и обучение начинается заново
-POP_VERSION = 2
+POP_VERSION = 3
 
 
 class Population:

@@ -155,6 +155,13 @@ class World {
     for (const pl of this.plats) if (!pl.broken && pl.type !== 'b' && pl.y < base.y - 1 && pl.y < this.cam + H - 10) next.push(pl);
     next.sort((a, b) => b.y - a.y);
     for (let i = 0; i < 3; i++) put(next[i]);
+    // Ближайшая платформа под ногами: куда можно спастись, если промахнулся мимо цели
+    let below = null;
+    for (const pl of this.plats) {
+      if (pl.broken || pl.type === 'b' || pl.y < feet || pl.y > this.cam + H) continue;
+      if (!below || pl.y < below.y) below = pl;
+    }
+    if (below) inp.push(wdx(p.x, below.x + PW / 2) / (W / 2), (below.y - feet) / 300, 1); else inp.push(0, 0, 0);
     let be = null, bd = Infinity;
     for (const e of this.enemies) {
       if (e.dead || e.y < this.cam - 20 || e.y > this.cam + H) continue;
@@ -168,8 +175,8 @@ class World {
   fitness() { return this.maxH + this.kills * 250 - this.throws * 3; }
 }
 
-// ===== Neural net: 19 inputs -> 12 tanh -> 2 outputs (steer, throw) =====
-const NI = 19, NH = 12, NO = 2;
+// ===== Neural net: 22 inputs -> 12 tanh -> 2 outputs (steer, throw) =====
+const NI = 22, NH = 12, NO = 2;
 const O_B1 = NI * NH, O_W2 = O_B1 + NH, O_B2 = O_W2 + NH * NO, NG = O_B2 + NO;
 function think(g, inp, hid, out) {
   for (let j = 0; j < NH; j++) {
@@ -190,7 +197,7 @@ function randomGenome() { const g = new Float32Array(NG); for (let i = 0; i < NG
 
 // Inputs that flip sign when the world is mirrored left<->right
 const DEADZONE = 0.05;
-const MIRROR = [0, 2, 4, 6, 8, 10, 12, 14];
+const MIRROR = [0, 2, 4, 6, 8, 10, 12, 14, 17];
 class Agent {
   constructor(genome, seed) {
     this.g = genome; this.w = new World(seed);
