@@ -237,6 +237,14 @@ class Worker:
 
     def restart(self, scr, ctl, cfg):
         reg = scr.region
+        # Если персонаж всё ещё на экране, игра не закончилась (попытку оборвали по ошибке) —
+        # не жмём «Играть снова» посреди игры, а просто продолжаем
+        det = bot.Detector()
+        time.sleep(0.3)
+        still = sum(game_running(scr, det) for _ in range(5))
+        if still >= 4:
+            print("Игра ещё идёт — продолжаю без перезапуска")
+            return True
         clicks = cfg.get("restart_clicks") or []
         if clicks:
             self.status("Перезапускаю игру…")

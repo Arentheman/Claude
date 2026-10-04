@@ -117,16 +117,21 @@ class Detector:
         hsv = cv2.cvtColor(small8, cv2.COLOR_BGR2HSV)
         top = int(self.top_ignore * H * s)
 
+        # Для платформ и объектов порог строже: контуры облаков светлее, и с ними
+        # платформы и персонаж слипались в одно пятно
+        strong = cv2.morphologyEx(((diff > 60) & (darker > OBJ_DARK)).astype(np.uint8), cv2.MORPH_CLOSE,
+                                  np.ones((3, 3), np.uint8))
         # --- платформы: горизонтальные полосы шире персонажа
         kw = max(3, int(0.055 * W * s))
-        runs = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((1, kw), np.uint8))
+        runs = cv2.morphologyEx(strong, cv2.MORPH_OPEN, np.ones((1, kw), np.uint8))
         n, lab, st, _ = cv2.connectedComponentsWithStats(runs)
         plats = []
         plat_mask = np.zeros_like(mask)
         for i in range(1, n):
             x, y, w, h, a = st[i]
             fw, fh = w / s, h / s
-            if y < top or not (0.08 * W <= fw <= 0.25 * W and fh <= 0.045 * W):
+            # платформы ~62 px при ширине игры 480 (0.13 W), персонаж ~46 px — он уже
+            if y < top or not (0.11 * W <= fw <= 0.25 * W and fh <= 0.045 * W):
                 continue
             comp = lab[y:y + h, x:x + w] == i
             if darker[y:y + h, x:x + w][comp].mean() < 150:  # контуры облаков
@@ -135,9 +140,6 @@ class Detector:
             brown = float(np.mean((hue >= 5) & (hue <= 22)))
             plats.append({"x": (x + w / 2) / s, "y": y / s, "w": fw, "type": "b" if brown > 0.5 else "n"})
             plat_mask[y:y + h, x:x + w][comp] = 1
-        # Для объектов порог строже: иначе персонаж на фоне облака слипается с их контурами
-        strong = cv2.morphologyEx(((diff > 60) & (darker > OBJ_DARK)).astype(np.uint8), cv2.MORPH_CLOSE,
-                                  np.ones((3, 3), np.uint8))
         obj = strong & (1 - cv2.dilate(plat_mask, np.ones((3, 3), np.uint8)))
 
         # --- остальные объекты
@@ -719,7 +721,9 @@ def play_run(screen, ctl, hk, genome, show=True, info="", act=True, on_frame=Non
         p = det["player"]
         if t - tr.last_seen > 0.8 and t - t_start > 2:
             break
-        if p is not None and p["y"] + p["h"] / 2 > 0.98 * region["height"] and tr.vy > 0:
+        # Стартовая платформа бывает у самого нижнего края, поэтому «упал» — только когда
+        # персонаж целиком ушёл за край, а не когда ноги коснулись низа экрана
+        if p is not None and p["y"] - p["h"] / 2 > 0.97 * region["height"] and tr.vy > 0:
             break
     ctl.release()
     return tr
