@@ -1,27 +1,17 @@
-// Обучение с учителем: сеть учится повторять простую стратегию («лети к следующей
-// платформе, промахнулся — рули на платформу под собой»). Получается хорошая стартовая
-// сеть, которую дальше улучшает эволюция — в симуляторе (pretrain.js) и в настоящей игре.
+// Обучение с учителем: сеть учится повторять «учителя» (teacher.js), который знает физику
+// симулятора и просчитывает, до какой платформы реально долететь. Сеть при этом видит
+// только то же, что в настоящей игре (22 входа, с задержкой кадра). Получается сильная
+// стартовая сеть, которую дальше улучшает эволюция — в симуляторе (pretrain.js) и в игре.
 //
 //   node pretrain/imitate.js [куда записать]
 const fs = require('fs');
 const path = require('path');
-const { World, NI, NH, NO, NG, O_B1, O_W2, O_B2, think } = require('./sim.js');
+const { World, Agent, NI, NH, NO, NG, O_B1, O_W2, O_B2, think, CONST } = require('./sim.js');
+const { teacher } = require('./teacher.js');
+const { DECIDE_EVERY, OBS_DELAY } = CONST;
 
 const MIRROR = [0, 2, 4, 6, 8, 10, 12, 14, 17];
 const DEADZONE = 0.05;
-
-// Учитель. Входы: 0 vx, 1 vy, 2-5 след. платформа, 6-9, 10-13, 14-16 платформа под ногами,
-// 17-19 монстр, 20 бросок готов, 21 смещение
-function teacher(i) {
-  const falling = i[1] > 0;
-  let dx;
-  if (i[5] && !(falling && i[3] < -0.02)) dx = i[2];   // до следующей ещё можно долететь
-  else if (i[16]) dx = i[14];                           // промахнулись — к платформе под ногами
-  else dx = i[2];
-  const move = dx > 0.02 ? 1 : dx < -0.02 ? -1 : 0;
-  const thr = i[19] > 0 && i[20] > 0;
-  return [move, thr];
-}
 
 let seed = 12345;
 const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
@@ -41,13 +31,16 @@ function collect(g, nLevels, beta, maxTicks) {
   const X = [], Y = [];
   for (let l = 0; l < nLevels; l++) {
     const w = new World((rnd() * 4294967296) >>> 0);
+    const q = []; let mv = 0, th = false;
     while (w.alive && w.t < maxTicks) {
-      const inp = w.sense();
-      const [tm, tt] = teacher(inp);
-      X.push(inp); Y.push([tm, tt ? 1 : -1]);
-      let mv = tm, th = tt;
-      if (g && rnd() > beta) [mv, th] = act(g, inp);
-      if (rnd() < 0.05) mv = [-1, 0, 1][(rnd() * 3) | 0];  // немного шума для разнообразия
+      q.push(w.sense()); if (q.length > OBS_DELAY + 1) q.shift();
+      th = false;
+      if (w.t % DECIDE_EVERY === 0) {
+        const [tm, tt] = teacher(w);
+        X.push(q[0]); Y.push([tm, tt ? 1 : -1]);
+        [mv, th] = (g && rnd() > beta) ? act(g, q[0]) : [tm, tt];
+        if (rnd() < 0.05) mv = [-1, 0, 1][(rnd() * 3) | 0];  // немного шума для разнообразия
+      }
       w.step(mv, th);
     }
   }
@@ -108,9 +101,9 @@ function train(g, X, Y, epochs) {
 function evaluate(g, levels = 20) {
   let tot = 0; const causes = {};
   for (let s = 1; s <= levels; s++) {
-    const w = new World(s * 7717);
-    while (w.alive) { const [mv, th] = act(g, w.sense()); w.step(mv, th); }
-    tot += w.maxH; causes[w.cause] = (causes[w.cause] || 0) + 1;
+    const a = new Agent(g, s * 7717);
+    while (a.w.alive) a.tick();
+    tot += a.w.maxH; causes[a.w.cause] = (causes[a.w.cause] || 0) + 1;
   }
   return [Math.round(tot / levels), JSON.stringify(causes)];
 }
@@ -119,10 +112,10 @@ const nets = [];
 for (let n = 0; n < 4; n++) {
   const g = new Float32Array(NG);
   for (let q = 0; q < NG; q++) g[q] = gauss() * 0.3;
-  let [X, Y] = collect(null, 30, 1, 3000);
-  for (let round = 0; round < 4; round++) {
+  let [X, Y] = collect(null, 60, 1, 6000);
+  for (let round = 0; round < 6; round++) {
     train(g, X, Y, 6);
-    const [X2, Y2] = collect(g, 15, 0.3, 3000);
+    const [X2, Y2] = collect(g, 30, 0.3, 6000);
     X = X.concat(X2); Y = Y.concat(Y2);
   }
   train(g, X, Y, 8);

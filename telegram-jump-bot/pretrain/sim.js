@@ -55,10 +55,12 @@ class World {
       const h = this.startY - this.topY;
       this.topY -= ROW_GAP + (r() * 2 - 1) * 4;
       // Пустых рядов нет: через пустой ряд не допрыгнуть, а «пропуски» в записях — нераспознанные платформы
-      // Следующая платформа — в пределах прыжка от предыдущей: в записях игрок перелетал
-      // не больше ~45% ширины экрана за прыжок
-      this.chainX = ((this.chainX + (r() * 2 - 1) * 0.45 * W) % W + W) % W;
-      const x = Math.min(this.chainX, W - PW), spring = r() < 0.03, second = r() < 0.14, x2 = r() * (W - PW);
+      // Следующая платформа — в пределах прыжка от предыдущей: в записях 95% перелётов
+      // не длиннее 30% ширины экрана, самые длинные — до 45%
+      let x;
+      do { x = r() * (W - PW); } while (Math.abs(wdx(this.chainX + PW / 2, x + PW / 2)) > 0.38 * W);
+      this.chainX = x;
+      const spring = r() < 0.03, second = r() < 0.14, x2 = r() * (W - PW);
       const pl = this.mk(x, this.topY, 'n', 0);
       if (spring) { pl.spring = true; pl.sx = 6 + r() * (PW - 26); }
       this.plats.push(pl);
@@ -297,4 +299,7 @@ class Population {
     };
   }
 }
-if (typeof module !== 'undefined') module.exports = { Population, World, Agent, randomGenome, think, NI, NH, NO, NG, O_W2, O_B1, O_B2 };
+if (typeof module !== 'undefined') module.exports = {
+  Population, World, Agent, randomGenome, think, NI, NH, NO, NG, O_W2, O_B1, O_B2,
+  CONST: { W, H, G, MAXVX, PW, DECIDE_EVERY, OBS_DELAY },
+};
