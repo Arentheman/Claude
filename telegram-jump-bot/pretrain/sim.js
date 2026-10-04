@@ -2,7 +2,7 @@
 // MAXVX подобран по записи настоящей игры: за один прыжок персонаж пролетает ~55% ширины экрана
 // Экран вмещает ~7 высот прыжка, как в настоящей игре (1080 px при прыжке ~155 px)
 const W = 400, H = 1372, G = 0.32, JUMP = -11.2, SPRING = -19, MAXVX = 3.2, PW = 52, PH = 12;
-const ROW_GAP = 94;    // ~0.48 высоты прыжка (196 px): как ряды в игре, и через пустой ряд ещё можно допрыгнуть
+const ROW_GAP = 100;   // ~0.5 высоты прыжка (196 px), как ряды платформ в игре (~80 px при прыжке ~155 px)
 const STALL_TICKS = 720, MAX_TICKS = 36000, COOLDOWN = 20, SHOT_SPEED = 14;
 
 function rngOf(seed) {
@@ -43,23 +43,20 @@ class World {
     }
     return pl;
   }
-  // Раскладка повторяет настоящую игру (замерено по записям): ряды через ~0.52 высоты
-  // прыжка, почти всегда одна платформа в ряду в случайном месте по ширине, изредка
-  // пустой ряд, время от времени монстр.
+  // Раскладка повторяет настоящую игру (замерено по записям): ряды через ~0.5 высоты
+  // прыжка, почти всегда одна платформа в ряду в случайном месте по ширине,
+  // время от времени монстр.
   gen() {
     const r = this.rng;
     while (this.topY > this.cam - 600) {
       const h = this.startY - this.topY;
       this.topY -= ROW_GAP + (r() * 2 - 1) * 4;
-      const skip = h > 600 && !this.lastSkipped && r() < 0.07;
+      // Пустых рядов нет: через пустой ряд не допрыгнуть, а «пропуски» в записях — нераспознанные платформы
       const x = r() * (W - PW), spring = r() < 0.03, second = r() < 0.14, x2 = r() * (W - PW);
-      this.lastSkipped = skip;
-      if (!skip) {
-        const pl = this.mk(x, this.topY, 'n', 0);
-        if (spring) { pl.spring = true; pl.sx = 6 + r() * (PW - 26); }
-        this.plats.push(pl);
-        if (second && Math.abs(wdx(x, x2)) > PW + 10) this.plats.push(this.mk(x2, this.topY, 'n', 0));
-      }
+      const pl = this.mk(x, this.topY, 'n', 0);
+      if (spring) { pl.spring = true; pl.sx = 6 + r() * (PW - 26); }
+      this.plats.push(pl);
+      if (second && Math.abs(wdx(x, x2)) > PW + 10) this.plats.push(this.mk(x2, this.topY, 'n', 0));
       if (h > 1500 && this.lastEnemyY - this.topY > 900 && r() < 0.3) {
         const amp = r() * 60;
         this.enemies.push({
