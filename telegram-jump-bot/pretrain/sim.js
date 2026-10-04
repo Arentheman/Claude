@@ -1,7 +1,10 @@
 // Симулятор прыгалки для предобучения сетей (тот же, что в doodle-jump-ai/index.html).
-// MAXVX подобран по записи настоящей игры: за один прыжок персонаж пролетает ~55% ширины экрана
 // Экран вмещает ~7 высот прыжка, как в настоящей игре (1080 px при прыжке ~155 px)
-const W = 400, H = 1372, G = 0.32, JUMP = -11.2, SPRING = -19, MAXVX = 3.2, PW = 52, PH = 12;
+// По записям игры: отскок на ряд вверх длится 0.585 с (здесь ~59.5 тиков, т.е. тик ≈ 9.8 мс),
+// персонаж бежит ~340 px/с при ширине 480 → 2.82 px/тик при ширине 400
+const W = 400, H = 1372, G = 0.32, JUMP = -11.2, SPRING = -19, MAXVX = 2.82, PW = 52, PH = 12;
+// Настоящий бот видит экран ~24 раза в секунду и с задержкой кадра: это ~4 тика симулятора
+const DECIDE_EVERY = 4, OBS_DELAY = 4;
 const ROW_GAP = 100;   // ~0.5 высоты прыжка (196 px), как ряды платформ в игре (~80 px при прыжке ~155 px)
 const STALL_TICKS = 720, MAX_TICKS = 36000, COOLDOWN = 20, SHOT_SPEED = 14;
 
@@ -52,7 +55,10 @@ class World {
       const h = this.startY - this.topY;
       this.topY -= ROW_GAP + (r() * 2 - 1) * 4;
       // Пустых рядов нет: через пустой ряд не допрыгнуть, а «пропуски» в записях — нераспознанные платформы
-      const x = r() * (W - PW), spring = r() < 0.03, second = r() < 0.14, x2 = r() * (W - PW);
+      // Следующая платформа — в пределах прыжка от предыдущей: в записях игрок перелетал
+      // не больше ~45% ширины экрана за прыжок
+      this.chainX = ((this.chainX + (r() * 2 - 1) * 0.45 * W) % W + W) % W;
+      const x = Math.min(this.chainX, W - PW), spring = r() < 0.03, second = r() < 0.14, x2 = r() * (W - PW);
       const pl = this.mk(x, this.topY, 'n', 0);
       if (spring) { pl.spring = true; pl.sx = 6 + r() * (PW - 26); }
       this.plats.push(pl);
@@ -210,12 +216,18 @@ class Agent {
   // so it is left/right symmetric by construction and only has to learn *which way* is good.
   tick() {
     const w = this.w; if (!w.alive) return;
-    const inp = this.inp = w.sense();
+    // Решаем раз в DECIDE_EVERY тиков по картинке OBS_DELAY тиков назад, как настоящий бот
+    this.obs = this.obs || [];
+    this.obs.push(w.sense());
+    if (this.obs.length > OBS_DELAY + 1) this.obs.shift();
+    if (this.lastMove !== undefined && w.t % DECIDE_EVERY !== 0) { w.step(this.lastMove, false); return; }
+    const inp = this.inp = this.obs[0];
     const mir = inp.slice(); for (const i of MIRROR) mir[i] = -mir[i];
     think(this.g, inp, this.hid, this.out);
     think(this.g, mir, this.hidM, this.outM);
     const s = this.steer = this.out[0] - this.outM[0];
-    w.step(s < -DEADZONE ? -1 : s > DEADZONE ? 1 : 0, this.out[1] + this.outM[1] > 0);
+    this.lastMove = s < -DEADZONE ? -1 : s > DEADZONE ? 1 : 0;
+    w.step(this.lastMove, this.out[1] + this.outM[1] > 0);
   }
 }
 

@@ -20,9 +20,9 @@ from PIL import Image, ImageTk
 import bot
 
 PREVIEW_H = 520
-RECORD_FPS = 12
-RECORD_MAX_S = 300
-RAW_EVERY_S = 1.0
+RECORD_FPS = 10
+RECORD_KEEP_S = 600     # запись хранит последние 10 минут — можно оставить на час и сохранить в конце
+RAW_EVERY_S = 2.0
 
 
 def ascii_dir(preferred, name):
@@ -35,35 +35,38 @@ def ascii_dir(preferred, name):
 
 
 class Recorder:
-    """Запись для анализа: видео с рамками распознавания, исходные кадры раз в секунду
-    и покадровый журнал (что бот увидел, что подал на вход сети и что нажал).
-    В конце всё складывается в один zip рядом с программой."""
+    """Запись для анализа: видео с рамками распознавания, исходные кадры и покадровый журнал
+    (что бот увидел, что подал на вход сети и что нажал). Хранит последние 10 минут в памяти,
+    сама не останавливается; при сохранении всё складывается в один zip рядом с программой."""
 
     def __init__(self):
-        import zipfile  # noqa: F401  (проверяем, что модуль есть, до начала записи)
+        import collections
         self.lock = threading.Lock()
         self.active = False
+        self.deque = collections.deque
 
     def start(self):
-        # Имена файлов латиницей: OpenCV на Windows не пишет видео по путям с кириллицей
         with self.lock:
-            stamp = time.strftime("%Y%m%d_%H%M%S")
-            self.dir = os.path.join(bot.HERE, "recordings", f"rec_{stamp}")
-            os.makedirs(os.path.join(self.dir, "frames"), exist_ok=True)
-            self.video = None
-            self.jsonl = open(os.path.join(self.dir, "telemetry.jsonl"), "w", encoding="utf-8")
-            self.logf = open(os.path.join(self.dir, "log.txt"), "w", encoding="utf-8")
             self.t0 = time.time()
+            self.rows = self.deque()      # (t, json-строка журнала)
+            self.video = self.deque()     # (t, jpeg кадра с рамками)
+            self.raw = self.deque()       # (t, jpeg исходного кадра)
+            self.lines = self.deque()     # (t, строка лога)
             self.last_video = 0.0
             self.last_raw = 0.0
-            self.frames = 0
+            self.size = None
             self.active = True
-        print("Запись началась")
+        print("Запись идёт: хранятся последние 10 минут")
+
+    def _trim(self, t):
+        for q in (self.rows, self.video, self.raw, self.lines):
+            while q and q[0][0] < t - RECORD_KEEP_S:
+                q.popleft()
 
     def log(self, line):
         with self.lock:
             if self.active:
-                self.logf.write(time.strftime("%H:%M:%S ") + line + "\n")
+                self.lines.append((time.time(), time.strftime("%H:%M:%S ") + line))
 
     def frame(self, f, annotated):
         with self.lock:
@@ -77,6 +80,7 @@ class Recorder:
                 "player": [round(p[k]) for k in ("x", "y", "w", "h")] if p else None,
                 "plats": [[round(q["x"]), round(q["y"])] for q in det["plats"]],
                 "enemies": [[round(e["x"]), round(e["y"])] for e in det["enemies"]],
+                "kinds": [e.get("kind", "") for e in det["enemies"]],
                 "move": f["move"], "throw": bool(f["throw"]), "steer": round(f["steer"], 3),
                 "inp": [round(float(v), 3) for v in f["inp"]] if f["inp"] is not None else None,
                 "scroll": round(tr.scroll, 1), "vx": round(tr.vx, 1), "vy": round(tr.vy, 1),
@@ -84,26 +88,17 @@ class Recorder:
                 "base": [round(v, 1) for v in tr.base] if tr.base else None,
                 "height": round(tr.max_h), "kills": tr.kills,
             }
-            self.jsonl.write(json.dumps(row, ensure_ascii=False) + "\n")
-            self.frames += 1
+            self.rows.append((t, json.dumps(row, ensure_ascii=False)))
             if t - self.last_video >= 1.0 / RECORD_FPS:
                 self.last_video = t
                 h, w = annotated.shape[:2]
                 small = cv2.resize(annotated, (w // 4 * 2, h // 4 * 2), interpolation=cv2.INTER_AREA)
-                if self.video is None:
-                    self.video_path = ascii_dir(self.dir, f"rec_{int(self.t0)}_video.mp4")
-                    self.video = cv2.VideoWriter(self.video_path,
-                                                 cv2.VideoWriter_fourcc(*"mp4v"), RECORD_FPS,
-                                                 (small.shape[1], small.shape[0]))
-                self.video.write(small)
+                self.size = (small.shape[1], small.shape[0])
+                self.video.append((t, cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 75])[1].tobytes()))
             if t - self.last_raw >= RAW_EVERY_S:
                 self.last_raw = t
-                cv2.imencode(".jpg", f["img"], [cv2.IMWRITE_JPEG_QUALITY, 85])[1].tofile(
-                    os.path.join(self.dir, "frames", f"{t - self.t0:07.1f}.jpg"))
-            over = t - self.t0 > RECORD_MAX_S
-        if over:
-            print(f"Запись остановлена: прошло {RECORD_MAX_S // 60} минут")
-            return self.stop()
+                self.raw.append((t, cv2.imencode(".jpg", f["img"], [cv2.IMWRITE_JPEG_QUALITY, 85])[1].tobytes()))
+            self._trim(t)
 
     def stop(self):
         import shutil
@@ -112,25 +107,39 @@ class Recorder:
             if not self.active:
                 return None
             self.active = False
-            if self.video is not None:
-                self.video.release()
-                if os.path.exists(self.video_path):
-                    shutil.move(self.video_path, os.path.join(self.dir, "video.mp4"))
-            self.jsonl.close()
-            self.logf.close()
-            for name in ("config.json", "population.json"):
-                src = os.path.join(bot.HERE, name)
-                if os.path.exists(src):
-                    shutil.copy(src, self.dir)
-            zpath = self.dir + ".zip"
-            with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
-                for root, _, files in os.walk(self.dir):
-                    for fn in files:
-                        full = os.path.join(root, fn)
-                        z.write(full, os.path.relpath(full, os.path.dirname(self.dir)))
-            shutil.rmtree(self.dir, ignore_errors=True)
-            frames = self.frames
-        print(f"Запись сохранена ({frames} кадров): {zpath}")
+            rows, video, raw, lines = list(self.rows), list(self.video), list(self.raw), list(self.lines)
+            t0, size = self.t0, self.size
+        stamp = time.strftime("%Y%m%d_%H%M%S")
+        d = os.path.join(bot.HERE, "recordings", f"rec_{stamp}")
+        os.makedirs(os.path.join(d, "frames"), exist_ok=True)
+        with open(os.path.join(d, "telemetry.jsonl"), "w", encoding="utf-8") as fh:
+            fh.write("\n".join(r for _, r in rows) + ("\n" if rows else ""))
+        with open(os.path.join(d, "log.txt"), "w", encoding="utf-8") as fh:
+            fh.write("\n".join(l for _, l in lines) + ("\n" if lines else ""))
+        for t, jpg in raw:
+            with open(os.path.join(d, "frames", f"{t - t0:07.1f}.jpg"), "wb") as fh:
+                fh.write(jpg)
+        if video and size:
+            vpath = ascii_dir(d, f"rec_{stamp}_video.mp4")
+            vw = cv2.VideoWriter(vpath, cv2.VideoWriter_fourcc(*"mp4v"), RECORD_FPS, size)
+            for _, jpg in video:
+                vw.write(cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR))
+            vw.release()
+            if os.path.exists(vpath):
+                shutil.move(vpath, os.path.join(d, "video.mp4"))
+        for name in ("config.json", "population.json"):
+            src = os.path.join(bot.HERE, name)
+            if os.path.exists(src):
+                shutil.copy(src, d)
+        zpath = d + ".zip"
+        with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
+            for root, _, files in os.walk(d):
+                for fn in files:
+                    full = os.path.join(root, fn)
+                    z.write(full, os.path.relpath(full, os.path.dirname(d)))
+        shutil.rmtree(d, ignore_errors=True)
+        mins = (rows[-1][0] - rows[0][0]) / 60 if rows else 0
+        print(f"Запись сохранена (последние {mins:.0f} мин): {zpath}")
         return zpath
 
 
@@ -469,8 +478,10 @@ class App:
 
     def toggle_record(self):
         if self.recorder.active:
+            self.b_rec.config(text="Сохраняю запись…", state="disabled")
+            self.root.update_idletasks()
             path = self.recorder.stop()
-            self.b_rec.config(text="●  Записать для анализа")
+            self.b_rec.config(text="●  Записать для анализа", state="normal")
             if path:
                 self.status.config(text="Запись сохранена. Пришлите этот файл в чат:\n" + path)
                 try:
@@ -479,10 +490,10 @@ class App:
                     pass
         else:
             self.recorder.start()
-            self.b_rec.config(text="■  Остановить запись")
+            self.b_rec.config(text="■  Сохранить запись")
             if not self.worker:
-                self.status.config(text="Запись идёт. Нажмите «Учиться», «Играть» или «Проверить зрение» — "
-                                        "запишется всё, что видит бот. Максимум 5 минут.")
+                self.status.config(text="Запись идёт и хранит последние 10 минут. Нажмите «Учиться», «Играть» "
+                                        "или «Проверить зрение», а когда захотите — «Сохранить запись».")
 
     def poll(self):
         try:

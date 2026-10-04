@@ -259,9 +259,9 @@ def wdx(a, b, W):
 # ============================================================================
 PX_PER_M = 20.5      # пикселей подъёма на игровой метр при высоте окна 1080
 SIM_APEX = 196.0      # высота прыжка в симуляторе, px
-SIM_PERIOD = 70.0     # длительность прыжка в симуляторе, тики
+SIM_PERIOD = 59.5     # отскок на ряд вверх в симуляторе, тики (в игре это self.period ≈ 0.585 с)
 SIM_W = 400.0
-SIM_MAXVX = 3.2     # должна совпадать с MAXVX в pretrain/sim.js
+SIM_MAXVX = 2.82    # должна совпадать с MAXVX в pretrain/sim.js
 COOLDOWN_S = 0.35
 
 
@@ -626,7 +626,7 @@ def mouse_position():
 # Эволюция
 # ============================================================================
 # Версия смысла входов сети: при её смене старый population.json не подходит и обучение начинается заново
-POP_VERSION = 4
+POP_VERSION = 5
 
 
 class Population:
@@ -644,6 +644,7 @@ class Population:
         self.best_fit = -1e9
         self.genomes = []
         self.fits = []
+        carry = []
         if os.path.exists(STATE_PATH):
             with open(STATE_PATH, encoding="utf-8") as f:
                 s = json.load(f)
@@ -654,6 +655,11 @@ class Population:
                 self.genomes = [np.array(g) for g in s["genomes"]]
                 self.fits = s.get("fits", [])
                 print(f"Продолжаю обучение: поколение {self.gen}, сеть {self.idx + 1}")
+            elif s.get("ng") == NG:
+                # Устройство сети то же, поменялись только единицы входов: лучшие сети, обученные
+                # в игре, берём с собой — пусть соревнуются с новыми из симулятора
+                carry = ([np.array(s["best"])] if s.get("best") else []) + [np.array(g) for g in s["genomes"][:3]]
+                print(f"Бот обновился: беру лучшие сети из прошлого обучения ({len(carry)} шт.) и новые из симулятора")
             else:
                 print("Сохранённое обучение от старой версии бота не подходит — начинаю заново")
         if not self.genomes:
@@ -666,7 +672,7 @@ class Population:
                     print(f"Старт с {len(seeds)} сетей, предобученных в симуляторе")
             if not seeds:
                 print("Старт с нуля: случайные сети")
-            self.genomes = seeds[:self.SIZE]
+            self.genomes = (carry + seeds)[:self.SIZE]
             while len(self.genomes) < self.SIZE:
                 if seeds:
                     self.genomes.append(self.mutate(random.choice(seeds)))
