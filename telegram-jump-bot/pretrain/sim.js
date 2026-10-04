@@ -1,5 +1,6 @@
 // Симулятор прыгалки для предобучения сетей (тот же, что в doodle-jump-ai/index.html).
-const W = 400, H = 640, G = 0.32, JUMP = -11.2, SPRING = -19, MAXVX = 6.2, PW = 58, PH = 12;
+// MAXVX подобран по записи настоящей игры: за один прыжок персонаж пролетает ~55% ширины экрана
+const W = 400, H = 640, G = 0.32, JUMP = -11.2, SPRING = -19, MAXVX = 3.2, PW = 58, PH = 12;
 const STALL_TICKS = 720, MAX_TICKS = 36000, COOLDOWN = 20, SHOT_SPEED = 14;
 
 function rngOf(seed) {
@@ -22,6 +23,7 @@ class World {
     this.startY = H - 40; this.topY = H - 40; this.lastEnemyY = H - 40;
     this.plats.push(this.mk(W / 2 - PW / 2, H - 40, 'n', 0));
     this.base = this.plats[0];
+    this.chainX = W / 2 - PW / 2;
     this.p = { x: W / 2, y: H - 60, vx: 0, vy: JUMP, face: 1 };
     this.cam = 0; this.maxH = 0; this.kills = 0; this.throws = 0; this.stall = 0; this.cool = 0; this.throwT = -99;
     this.alive = true; this.cause = ''; this.lastMove = 0; this.lastThrow = false;
@@ -46,7 +48,9 @@ class World {
       const gap = 28 + r() * (40 + 105 * diff);
       this.topY -= gap;
       const isM = r() < 0.08 + 0.32 * diff && h > 800;
-      const pl = this.mk(r() * (W - PW), this.topY, isM ? 'm' : 'n', diff);
+      // следующая платформа цепочки не дальше, чем персонаж успевает долететь за прыжок
+      this.chainX = (this.chainX + (r() * 2 - 1) * 150 + W) % W;
+      const pl = this.mk(Math.min(this.chainX, W - PW), this.topY, isM ? 'm' : 'n', diff);
       if (!isM && r() < 0.07) { pl.spring = true; pl.sx = 6 + r() * (PW - 26); }
       this.plats.push(pl);
       if (r() < 0.12 + 0.25 * diff) {

@@ -1,4 +1,4 @@
-// Предобучение в симуляторе: node pretrain/pretrain.js [поколений]
+// Предобучение в симуляторе: node pretrain/pretrain.js [поколений] [куда записать]
 // Пишет ../pretrained.json — с этих сетей bot.py начинает учиться в настоящей игре.
 const fs = require('fs');
 const path = require('path');
@@ -15,5 +15,6 @@ while (pop.gen <= GENS) {
 }
 // После evolve() первыми идут элиты прошлого поколения — их и берём
 const out = { ng: NG, gens: GENS, genomes: pop.genomes.slice(0, 12).map(g => Array.from(g, v => Math.round(v * 1e5) / 1e5)) };
-fs.writeFileSync(path.join(__dirname, '..', 'pretrained.json'), JSON.stringify(out));
-console.log(`Готово за ${((Date.now() - t0) / 1000).toFixed(0)} с, записал pretrained.json`);
+const outPath = process.argv[3] || path.join(__dirname, '..', 'pretrained.json');
+fs.writeFileSync(outPath, JSON.stringify(out));
+console.log(`Готово за ${((Date.now() - t0) / 1000).toFixed(0)} с, записал ${outPath}`);

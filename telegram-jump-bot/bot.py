@@ -85,10 +85,19 @@ def decide(g, inp):
 # ============================================================================
 # Распознавание
 # ============================================================================
+OBJ_DARK = 100
+
+
 class Detector:
-    """Ищет на кадре платформы (широкие тёмные полоски), врагов и персонажа.
-    Фон — плавный градиент, поэтому всё, что заметно темнее медианы своей строки,
-    считается объектом."""
+    """Ищет на кадре платформы, персонажа и врагов.
+
+    1. Всё, что заметно темнее медианы своей строки, — объект (фон — плавный градиент).
+    2. Платформы — длинные горизонтальные полосы: их выделяем первыми и вырезаем,
+       чтобы персонаж, стоящий на платформе, не слипался с ней.
+    3. Оставшиеся пятна сортируем по цвету (пороги подобраны по записям игры):
+       персонаж — немного розово-бежевого (кожа) и зелёная шапка; свинья — почти вся розовая;
+       чёрная дыра — фиолетовая; призрак — голубой; пружины и бонусы без розового пропускаем.
+    """
 
     def __init__(self, scale=0.5, top_ignore=0.09):
         self.scale = scale
@@ -98,55 +107,89 @@ class Detector:
     def detect(self, bgr):
         H, W = bgr.shape[:2]
         s = self.scale
-        small = cv2.resize(bgr, None, fx=s, fy=s, interpolation=cv2.INTER_AREA).astype(np.int16)
+        small8 = cv2.resize(bgr, None, fx=s, fy=s, interpolation=cv2.INTER_AREA)
+        small = small8.astype(np.int16)
         bg = np.median(small, axis=1, keepdims=True)
         diff = np.abs(small - bg).sum(axis=2)
         darker = bg.sum(axis=2) - small.sum(axis=2)
         mask = ((diff > 60) & (darker > 30)).astype(np.uint8)
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
-        n, lab, st, _ = cv2.connectedComponentsWithStats(mask)
+        hsv = cv2.cvtColor(small8, cv2.COLOR_BGR2HSV)
+        top = int(self.top_ignore * H * s)
 
-        plats, blobs = [], []
-        min_area = (0.012 * W * s) ** 2
+        # --- платформы: горизонтальные полосы шире персонажа
+        kw = max(3, int(0.055 * W * s))
+        runs = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((1, kw), np.uint8))
+        n, lab, st, _ = cv2.connectedComponentsWithStats(runs)
+        plats = []
+        plat_mask = np.zeros_like(mask)
         for i in range(1, n):
             x, y, w, h, a = st[i]
-            if a < min_area:
+            fw, fh = w / s, h / s
+            if y < top or not (0.08 * W <= fw <= 0.25 * W and fh <= 0.045 * W):
                 continue
-            fx, fy, fw, fh = x / s, y / s, w / s, h / s
-            cy = fy + fh / 2
-            if cy < self.top_ignore * H:
-                continue
-            fill = a / float(w * h)
             comp = lab[y:y + h, x:x + w] == i
-            # Облака внизу экрана — тонкие светлые контуры, у настоящих объектов контраст заметно сильнее
+            if darker[y:y + h, x:x + w][comp].mean() < 150:  # контуры облаков
+                continue
+            hue = hsv[y:y + h, x:x + w, 0][comp]
+            brown = float(np.mean((hue >= 5) & (hue <= 22)))
+            plats.append({"x": (x + w / 2) / s, "y": y / s, "w": fw, "type": "b" if brown > 0.5 else "n"})
+            plat_mask[y:y + h, x:x + w][comp] = 1
+        # Для объектов порог строже: иначе персонаж на фоне облака слипается с их контурами
+        strong = cv2.morphologyEx(((diff > 60) & (darker > OBJ_DARK)).astype(np.uint8), cv2.MORPH_CLOSE,
+                                  np.ones((3, 3), np.uint8))
+        obj = strong & (1 - cv2.dilate(plat_mask, np.ones((3, 3), np.uint8)))
+
+        # --- остальные объекты
+        n, lab, st, _ = cv2.connectedComponentsWithStats(obj)
+        blobs = []
+        for i in range(1, n):
+            x, y, w, h, a = st[i]
+            fw, fh = w / s, h / s
+            cy = (y + h / 2) / s
+            if cy < self.top_ignore * H or not (0.045 * W <= fw <= 0.3 * W and 0.045 * W <= fh <= 0.3 * W):
+                continue
+            if a / float(w * h) < 0.3:
+                continue
+            comp = lab[y:y + h, x:x + w] == i
             if darker[y:y + h, x:x + w][comp].mean() < 150:
                 continue
-            if 0.08 * W <= fw <= 0.25 * W and fw / max(fh, 1) > 3.2 and fill > 0.55:
-                plats.append({"x": fx + fw / 2, "y": fy, "w": fw})
-                continue
-            if 0.05 * W <= fw <= 0.25 * W and 0.05 * W <= fh <= 0.25 * W and 0.45 < fw / fh < 2.2 and fill > 0.35:
-                px = small[y:y + h, x:x + w][comp]
-                b, g_, r = px[:, 0], px[:, 1], px[:, 2]
-                pink = float(np.mean((r - b > 25) & (r - g_ > 35) & (b >= g_ - 15)))
-                blobs.append({"x": fx + fw / 2, "y": cy, "w": fw, "h": fh, "pink": pink})
+            px = hsv[y:y + h, x:x + w][comp].astype(np.int16)
+            hh, ss, vv = px[:, 0], px[:, 1], px[:, 2]
+            f = {
+                "pink": float(np.mean(((hh <= 10) | (hh >= 165)) & (ss > 60))),
+                "purple": float(np.mean((hh >= 120) & (hh < 165) & (ss > 60))),
+                "blue": float(np.mean((hh >= 85) & (hh < 120) & (ss > 40))),
+                "skin": float(np.mean((hh >= 5) & (hh <= 25) & (ss > 40) & (vv > 90))),
+            }
+            if f["purple"] > 0.4:
+                kind = "hole"
+            elif f["blue"] > 0.5:
+                kind = "ghost"
+            elif f["pink"] > 0.45:
+                kind = "pig"
+            elif 0.07 <= f["pink"] <= 0.42 and f["skin"] > 0.12:
+                kind = "player?"
+            elif f["pink"] < 0.05:
+                kind = "item"  # пружины, ракеты и прочие бонусы
+            else:
+                kind = "enemy"
+            blobs.append({"x": (x + w / 2) / s, "y": cy, "w": fw, "h": fh, "kind": kind, **f})
 
-        player = self._pick_player(blobs, W, H)
-        enemies = [b for b in blobs if b is not player]
+        player = self._pick_player([b for b in blobs if b["kind"] == "player?"], W, H)
+        enemies = [b for b in blobs if b is not player and b["kind"] in ("pig", "ghost", "hole", "enemy", "player?")]
         if player is not None:
             self.prev_player = (player["x"], player["y"])
         return {"W": W, "H": H, "plats": plats, "player": player, "enemies": enemies}
 
-    def _pick_player(self, blobs, W, H):
+    def _pick_player(self, cands, W, H):
         best, best_score = None, -1e9
-        for b in blobs:
-            if b["pink"] > 0.25:  # розовые — свиньи
-                continue
-            score = -b["pink"] * 4
+        for b in cands:
+            # чем ближе к персонажу «по цвету» (кожа ~0.29, розовый ~0.2), тем лучше
+            score = -abs(b["skin"] - 0.29) * 3 - abs(b["pink"] - 0.2) * 3
             if self.prev_player:
                 d = np.hypot(wdx(self.prev_player[0], b["x"], W), self.prev_player[1] - b["y"])
-                score -= d / (0.15 * H)
-            else:
-                score += b["y"] / H  # в начале игры персонаж обычно внизу
+                score -= d / (0.25 * H)
             if score > best_score:
                 best, best_score = b, score
         return best
@@ -171,6 +214,7 @@ def wdx(a, b, W):
 SIM_APEX = 196.0      # высота прыжка в симуляторе, px
 SIM_PERIOD = 70.0     # длительность прыжка в симуляторе, тики
 SIM_W = 400.0
+SIM_MAXVX = 3.2     # должна совпадать с MAXVX в pretrain/sim.js
 COOLDOWN_S = 0.35
 
 
@@ -185,15 +229,18 @@ class Tracker:
         self.base = None         # (x, мировой y) платформы, от которой оттолкнулись
         self.start_wy = None
         self.max_h = 0.0
-        self.apex = 0.25 * H     # оценки высоты и длительности прыжка уточняются по ходу игры
-        self.period = 1.0
+        # Оценки высоты и длительности прыжка (по записи игры ~0.14 высоты экрана и ~0.6 с);
+        # уточняются по ходу игры
+        self.apex = 0.14 * H
+        self.period = 0.6
+        self.falling = False
         self.bounces = []
         self.rises = []
         self.min_wy_since_bounce = None
         self.last_throw = -9.0
         self.throws = 0
         self.kills = 0
-        self.prev_enemies = []
+        self.tracks = []         # враги, за которыми следим: x, y, сколько кадров видели, вид
         self.last_seen = time.time()
 
     def _scroll_delta(self, plats):
@@ -221,13 +268,7 @@ class Tracker:
         dt = max(dt, 1e-3)
         self.prev_t = t
 
-        # Убийства: враг пропал не у нижнего края вскоре после броска
-        if t - self.last_throw < 1.5 and len(det["enemies"]) < len(self.prev_enemies):
-            gone = [e for e in self.prev_enemies
-                    if not any(abs(wdx(e["x"], f["x"], W)) < 0.1 * W and abs(e["y"] - f["y"]) < 0.1 * H
-                               for f in det["enemies"])]
-            self.kills += sum(1 for e in gone if e["y"] < 0.85 * H)
-        self.prev_enemies = det["enemies"]
+        self._track_enemies(det["enemies"], t)
 
         p = det["player"]
         if p is None:
@@ -238,10 +279,13 @@ class Tracker:
             vx = wdx(self.prev_p[0], p["x"], W) / dt
             vy = (wy - self.prev_p[1]) / dt
             self.vx = 0.5 * self.vx + 0.5 * vx
-            prev_vy = self.vy
             self.vy = 0.5 * self.vy + 0.5 * vy
-            # Отскок: падали — и резко полетели вверх
-            if prev_vy > 0.15 * H and self.vy < -0.15 * H:
+            # Отскок: падали — и резко полетели вверх. Смотрим на сырую скорость:
+            # сглаженная меняет знак слишком плавно, и отскок терялся
+            if vy > 0.1 * H:
+                self.falling = True
+            elif vy < -0.1 * H and self.falling:
+                self.falling = False
                 self._on_bounce(det, p, wy, t)
         self.prev_p = (p["x"], wy)
         if self.start_wy is None:
@@ -250,6 +294,37 @@ class Tracker:
         self.max_h = max(self.max_h, self.start_wy - wy)
         if self.min_wy_since_bounce is None or wy < self.min_wy_since_bounce:
             self.min_wy_since_bounce = wy
+
+    def _track_enemies(self, enemies, t):
+        """Убийство засчитываем, только если враг, которого видели хотя бы 4 кадра подряд,
+        исчез посреди экрана вскоре после броска. Иначе мигание рамок считалось убийствами."""
+        W, H = self.W, self.H
+        new = []
+        used = set()
+        for e in enemies:
+            best = None
+            for i, tr in enumerate(self.tracks):
+                if i in used:
+                    continue
+                d = abs(wdx(tr["x"], e["x"], W)) + abs(tr["y"] - e["y"])
+                if d < 0.12 * W and (best is None or d < best[0]):
+                    best = (d, i)
+            if best:
+                used.add(best[1])
+                tr = self.tracks[best[1]]
+                new.append({"x": e["x"], "y": e["y"], "n": tr["n"] + 1, "miss": 0, "kind": e["kind"]})
+            else:
+                new.append({"x": e["x"], "y": e["y"], "n": 1, "miss": 0, "kind": e["kind"]})
+        for i, tr in enumerate(self.tracks):
+            if i in used:
+                continue
+            tr["miss"] += 1
+            if tr["miss"] <= 2:  # пару кадров прощаем — рамка могла мигнуть
+                new.append(tr)
+            elif (tr["n"] >= 4 and tr["kind"] != "hole" and 0.12 * H < tr["y"] < 0.85 * H
+                  and t - self.last_throw < 0.8 and self.kills < self.throws):
+                self.kills += 1
+        self.tracks = new
 
     def _on_bounce(self, det, p, wy, t):
         feet = p["y"] + p["h"] / 2
@@ -262,13 +337,14 @@ class Tracker:
         base_y = (best[1]["y"] if best else feet) - self.scroll
         if self.base is not None and self.min_wy_since_bounce is not None:
             rise = self.base[1] - self.min_wy_since_bounce - p["h"] / 2
-            if 0.05 * self.H < rise < 0.9 * self.H:
+            if 0.08 * self.H < rise < 0.35 * self.H:
                 self.rises = (self.rises + [rise])[-12:]
                 self.apex = float(np.median(self.rises))
         if self.bounces:
             per = t - self.bounces[-1]
-            if 0.3 < per < 4:
-                self.period = float(np.median(([per] + [b - a for a, b in zip(self.bounces, self.bounces[1:])])[-12:]))
+            if 0.35 < per < 1.2:
+                self.periods = (getattr(self, "periods", []) + [per])[-12:]
+                self.period = float(np.median(self.periods))
         self.bounces = (self.bounces + [t])[-13:]
         self.base = (best[1]["x"] if best else p["x"], base_y)
         self.min_wy_since_bounce = wy
@@ -281,10 +357,10 @@ class Tracker:
         tick = self.period / SIM_PERIOD        # секунд в одном тике симулятора
         vx_sim = self.vx * (SIM_W / W) * tick
         vy_sim = self.vy * kv * tick
-        inp = [vx_sim / 6.2, vy_sim / 15.0]
+        inp = [vx_sim / SIM_MAXVX, vy_sim / 15.0]
         feet = p["y"] + p["h"] / 2
         base_wy = self.base[1] if self.base else feet - self.scroll
-        nxt = [pl for pl in det["plats"] if pl["y"] - self.scroll < base_wy - 0.01 * H]
+        nxt = [pl for pl in det["plats"] if pl["y"] - self.scroll < base_wy - 0.01 * H and pl.get("type") != "b"]
         nxt.sort(key=lambda pl: -pl["y"])
         for i in range(3):
             if i < len(nxt):
@@ -310,7 +386,7 @@ class Tracker:
         return best
 
     def fitness(self):
-        return self.max_h * SIM_APEX / self.apex + 250 * self.kills - 3 * self.throws
+        return self.max_h * SIM_APEX / self.apex + 150 * self.kills - 3 * self.throws
 
     def height_label(self):
         return int(self.max_h)
@@ -402,7 +478,15 @@ class Controls:
             (self.kb.press if down else self.kb.release)(key)
 
     def move(self, d):
-        if self.dry or d == self.held:
+        """Игра двигает персонажа по повторяющимся нажатиям, как при зажатой клавише,
+        поэтому пока клавиша «зажата», шлём нажатие на каждом кадре."""
+        if self.dry:
+            return
+        if d == self.held:
+            if d == -1:
+                self._key("a", True)
+            elif d == 1:
+                self._key("d", True)
             return
         if self.held == -1:
             self._key("a", False)
@@ -471,6 +555,10 @@ def mouse_position():
 # ============================================================================
 # Эволюция
 # ============================================================================
+# Версия смысла входов сети: при её смене старый population.json не подходит и обучение начинается заново
+POP_VERSION = 2
+
+
 class Population:
     """Каждая сеть играет одну попытку. После поколения ELITE лучших переходят как есть
     (и переигрывают — так везение отсеивается), остальные — мутированные копии лучших."""
@@ -489,13 +577,15 @@ class Population:
         if os.path.exists(STATE_PATH):
             with open(STATE_PATH, encoding="utf-8") as f:
                 s = json.load(f)
-            if s.get("ng") == NG:
+            if s.get("ng") == NG and s.get("ver") == POP_VERSION:
                 self.gen, self.idx, self.history = s["gen"], s.get("idx", 0), s.get("history", [])
                 self.best_fit = s.get("best_fit", -1e9)
                 self.best = np.array(s["best"]) if s.get("best") else None
                 self.genomes = [np.array(g) for g in s["genomes"]]
                 self.fits = s.get("fits", [])
                 print(f"Продолжаю обучение: поколение {self.gen}, сеть {self.idx + 1}")
+            else:
+                print("Сохранённое обучение от старой версии бота не подходит — начинаю заново")
         if not self.genomes:
             seeds = []
             if os.path.exists(PRETRAINED_PATH):
@@ -544,7 +634,7 @@ class Population:
         self.gen += 1
 
     def save(self):
-        data = {"ng": NG, "gen": self.gen, "idx": self.idx, "history": self.history,
+        data = {"ng": NG, "ver": POP_VERSION, "gen": self.gen, "idx": self.idx, "history": self.history,
                 "best_fit": self.best_fit, "best": self.best.tolist() if self.best is not None else None,
                 "genomes": [g.tolist() for g in self.genomes], "fits": self.fits}
         tmp = STATE_PATH + ".tmp"
