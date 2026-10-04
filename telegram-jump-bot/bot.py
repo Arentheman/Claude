@@ -444,6 +444,8 @@ class Tracker:
         p = det["player"]
         best, bd = None, 1e9
         for e in det["enemies"]:
+            if e.get("kind") == "hole":  # чёрную дыру не убить — бросать в неё бессмысленно
+                continue
             d = np.hypot(wdx(p["x"], e["x"], self.W), e["y"] - p["y"])
             if d < bd:
                 best, bd = e, d
