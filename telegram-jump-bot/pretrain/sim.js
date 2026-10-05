@@ -215,8 +215,8 @@ class World {
   fitness() { return this.maxH + this.kills * 250 - this.throws * 3; }
 }
 
-// ===== Neural net: 26 inputs -> 12 tanh -> 2 outputs (steer, throw) =====
-const NI = 26, NH = 12, NO = 2;
+// ===== Neural net: 26 inputs -> 24 tanh -> 2 outputs (steer, throw) =====
+const NI = 26, NH = 24, NO = 2;
 const O_B1 = NI * NH, O_W2 = O_B1 + NH, O_B2 = O_W2 + NH * NO, NG = O_B2 + NO;
 function think(g, inp, hid, out) {
   for (let j = 0; j < NH; j++) {

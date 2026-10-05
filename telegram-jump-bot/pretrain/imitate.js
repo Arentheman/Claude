@@ -108,7 +108,7 @@ function evaluate(g, levels = 20) {
 }
 
 const nets = [];
-for (let n = 0; n < 4; n++) {
+for (let n = 0; n < (+process.env.NETS || 4); n++) {
   const g = new Float32Array(NG);
   for (let q = 0; q < NG; q++) g[q] = gauss() * 0.3;
   let [X, Y] = collect(null, 60, 1, 6000);
