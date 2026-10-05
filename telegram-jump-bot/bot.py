@@ -179,10 +179,10 @@ class Detector:
                 kind = "ghost"
             elif f["pink"] > 0.45:
                 kind = "pig"
-            elif 0.09 <= f["pink"] <= 0.42 and f["skin"] > 0.12:
-                kind = "player?"
-            elif f["pink"] < 0.09:
-                kind = "item"  # пружины, ракеты и прочие бонусы
+            elif 0.09 <= f["pink"] <= 0.42 and 0.12 < f["skin"] < 0.7:
+                kind = "player?"  # у персонажа «кожи» ~30%; сплошь оранжевое — искры ломающейся платформы
+            elif f["pink"] < 0.09 or f["skin"] >= 0.7:
+                kind = "item"  # пружины, ракеты, бонусы и оранжевые искры ломающейся платформы
             else:
                 kind = "enemy"
             blobs.append({"x": (x + w / 2) / s, "y": cy, "w": fw, "h": fh, "kind": kind, **f})
@@ -192,7 +192,9 @@ class Detector:
             blobs.append(g)
 
         player = self._pick_player([b for b in blobs if b["kind"] == "player?"], W, H)
-        enemies = [b for b in blobs if b is not player and b["kind"] in ("pig", "ghost", "hole", "enemy", "player?")]
+        # Лишние «кандидаты в персонажа» врагами не считаем: это бывают искры от ломающейся
+        # платформы или пружина, и сеть начинала шарахаться от таких платформ
+        enemies = [b for b in blobs if b is not player and b["kind"] in ("pig", "ghost", "hole", "enemy")]
         if player is not None:
             self.prev_player = (player["x"], player["y"])
         return {"W": W, "H": H, "plats": plats, "player": player, "enemies": enemies}
