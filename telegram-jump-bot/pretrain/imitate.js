@@ -6,11 +6,10 @@
 //   node pretrain/imitate.js [куда записать]
 const fs = require('fs');
 const path = require('path');
-const { World, Agent, NI, NH, NO, NG, O_B1, O_W2, O_B2, think, CONST } = require('./sim.js');
+const { World, Agent, NI, NH, NO, NG, O_B1, O_W2, O_B2, think, CONST, MIRROR } = require('./sim.js');
 const { teacher } = require('./teacher.js');
 const { DECIDE_EVERY, OBS_DELAY } = CONST;
 
-const MIRROR = [0, 2, 4, 6, 8, 10, 12, 14, 17];
 const DEADZONE = 0.05;
 
 let seed = 12345;

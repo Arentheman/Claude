@@ -5,6 +5,8 @@
 const W = 400, H = 1372, G = 0.32, JUMP = -11.2, SPRING = -19, MAXVX = 2.82, PW = 52, PH = 12;
 // Настоящий бот видит экран ~24 раза в секунду и с задержкой кадра: это ~4 тика симулятора
 const DECIDE_EVERY = 4, OBS_DELAY = 4;
+const MOVE_SPEED = 0.49;  // движущиеся платформы: ~60 px/с в игре, туда-обратно на 100–180 px
+const HOLE_R = 34;        // радиус чёрной дыры (в игре ~90 px при ширине 480)
 const ROW_GAP = 100;   // ~0.5 высоты прыжка (196 px), как ряды платформ в игре (~80 px при прыжке ~155 px)
 const STALL_TICKS = 720, MAX_TICKS = 36000, COOLDOWN = 20, SHOT_SPEED = 14;
 
@@ -28,6 +30,7 @@ class World {
     this.startY = H - 40; this.topY = H - 40; this.lastEnemyY = H - 40;
     this.plats.push(this.mk(W / 2 - PW / 2, H - 40, 'n', 0));
     this.base = this.plats[0];
+    this.holes = []; this.lastHoleY = this.startY;
     this.chainX = W / 2 - PW / 2;
     this.p = { x: W / 2, y: H - 60, vx: 0, vy: JUMP, face: 1 };
     this.cam = 0; this.maxH = 0; this.kills = 0; this.throws = 0; this.stall = 0; this.cool = 0; this.throwT = -99;
@@ -38,11 +41,10 @@ class World {
     const r = this.rng;
     const pl = { x, y, cx: x, type, amp: 0, spd: 0, ph: 0, broken: false, spring: false, sx: 0, fall: 0 };
     if (type === 'm') {
-      pl.amp = Math.min(30 + r() * (60 + 80 * diff), (W - PW) / 2 - 2);
-      pl.cx = pl.amp + r() * (W - PW - 2 * pl.amp);
-      pl.spd = 0.015 + r() * 0.025 * (1 + diff);
-      pl.ph = r() * 6.283;
-      pl.x = pl.cx + pl.amp * Math.sin(pl.ph);
+      const amp = 40 + r() * 50;
+      pl.lo = Math.max(0, x - amp); pl.hi = Math.min(W - PW, x + amp);
+      pl.x = pl.lo + r() * (pl.hi - pl.lo);
+      pl.v = (r() < 0.5 ? -1 : 1) * MOVE_SPEED;
     }
     return pl;
   }
@@ -59,10 +61,21 @@ class World {
       // не длиннее 30% ширины экрана, самые длинные — до 45%
       let x;
       do { x = r() * (W - PW); } while (Math.abs(wdx(this.chainX + PW / 2, x + PW / 2)) > 0.38 * W);
+      this.recentX = [this.chainX, ...(this.recentX || [])].slice(0, 2);
       this.chainX = x;
       const spring = r() < 0.03, second = r() < 0.14, x2 = r() * (W - PW);
-      const pl = this.mk(x, this.topY, 'n', 0);
-      if (spring) { pl.spring = true; pl.sx = 6 + r() * (PW - 26); }
+      const moving = h > 600 && r() < 0.12;
+      const pl = this.mk(x, this.topY, moving ? 'm' : 'n', 0);
+      if (spring && !moving) { pl.spring = true; pl.sx = 6 + r() * (PW - 26); }
+      // Чёрная дыра — не на пути к платформе ряда
+      if (h > 2500 && this.lastHoleY - this.topY > 1200 && r() < 0.15) {
+        let hx, tries = 0;
+        // не над платформами этого и двух рядов ниже — иначе путь наверх идёт прямо в дыру
+        const near = [x, ...this.recentX].map(v => v + PW / 2);
+        do { hx = HOLE_R + r() * (W - 2 * HOLE_R); tries++; } while (near.some(c => Math.abs(wdx(hx, c)) < 100) && tries < 30);
+        if (tries >= 30) tries = 99;
+        if (tries < 30) { this.holes.push({ x: hx, y: this.topY - 50 }); this.lastHoleY = this.topY; }
+      }
       this.plats.push(pl);
       if (second && Math.abs(wdx(x, x2)) > PW + 10) this.plats.push(this.mk(x2, this.topY, 'n', 0));
       if (h > 1500 && this.lastEnemyY - this.topY > 900 && r() < 0.3) {
@@ -81,7 +94,10 @@ class World {
     const p = this.p; this.t++; this.cool--;
     this.lastMove = move; this.lastThrow = false;
     for (const pl of this.plats) {
-      if (pl.type === 'm') pl.x = pl.cx + pl.amp * Math.sin(this.t * pl.spd + pl.ph);
+      if (pl.type === 'm') {
+        pl.x += pl.v;
+        if (pl.x < pl.lo) { pl.x = pl.lo; pl.v = -pl.v; } else if (pl.x > pl.hi) { pl.x = pl.hi; pl.v = -pl.v; }
+      }
       if (pl.broken) { pl.fall += 0.5; pl.y += pl.fall; }
     }
     for (const e of this.enemies) {
@@ -110,6 +126,9 @@ class World {
         if (p.vy > 0 && oy + 20 <= e.y - 6) { e.dead = true; this.kills++; p.vy = JUMP; }
         else { this.die('монстр'); return; }
       }
+    }
+    for (const hl of this.holes) {
+      if (Math.hypot(wdx(p.x, hl.x), p.y - hl.y) < HOLE_R) { this.die('дыра'); return; }
     }
     if (throwing && this.cool <= 0) {
       let target = null;
@@ -146,31 +165,36 @@ class World {
     if (this.plats.length > 60 || this.t % 30 === 0) {
       this.plats = this.plats.filter(pl => pl.y < cut);
       this.enemies = this.enemies.filter(e => e.y < cut);
+      this.holes = this.holes.filter(hl => hl.y < cut);
     }
     this.gen();
   }
   die(cause) { this.alive = false; this.cause = cause; }
   // Network inputs: what the doodler "sees".
   // Platforms are measured from the one it last bounced on, so "the next step up" is always slot 0.
+  // Входы сети: 0 vx, 1 vy, 2–13 три следующие платформы над базой (dx, dy, скорость, есть),
+  // 14–17 платформа под ногами (dx, dy, есть, скорость), 18–20 монстр, 21–23 чёрная дыра,
+  // 24 бросок готов, 25 смещение. Платформы считаются от той, от которой оттолкнулись.
   sense() {
     const p = this.p, feet = p.y + 20, inp = [p.vx / MAXVX, p.vy / 15];
+    const vel = pl => (pl.type === 'm' ? pl.v : 0) / MOVE_SPEED;
     const put = (pl) => {
       if (!pl) { inp.push(0, 0, 0, 0); return; }
-      const vel = pl.type === 'm' ? pl.amp * pl.spd * Math.cos(this.t * pl.spd + pl.ph) : 0;
-      inp.push(wdx(p.x, pl.x + PW / 2) / (W / 2), (pl.y - feet) / 300, vel / 3, 1);
+      inp.push(wdx(p.x, pl.x + PW / 2) / (W / 2), (pl.y - feet) / 300, vel(pl), 1);
     };
     const base = this.base;
     const next = [];
     for (const pl of this.plats) if (!pl.broken && pl.type !== 'b' && pl.y < base.y - 1 && pl.y < this.cam + H - 10) next.push(pl);
     next.sort((a, b) => b.y - a.y);
     for (let i = 0; i < 3; i++) put(next[i]);
-    // Ближайшая платформа под ногами: куда можно спастись, если промахнулся мимо цели
+    // Ближайшая платформа под ногами: куда можно спастись, если промахнулся мимо цели,
+    // и на которой можно переждать, если она едет к нужной
     let below = null;
     for (const pl of this.plats) {
       if (pl.broken || pl.type === 'b' || pl.y < feet || pl.y > this.cam + H) continue;
       if (!below || pl.y < below.y) below = pl;
     }
-    if (below) inp.push(wdx(p.x, below.x + PW / 2) / (W / 2), (below.y - feet) / 300, 1); else inp.push(0, 0, 0);
+    if (below) inp.push(wdx(p.x, below.x + PW / 2) / (W / 2), (below.y - feet) / 300, 1, vel(below)); else inp.push(0, 0, 0, 0);
     let be = null, bd = Infinity;
     for (const e of this.enemies) {
       if (e.dead || e.y < this.cam - 20 || e.y > this.cam + H) continue;
@@ -178,14 +202,21 @@ class World {
       if (d < bd) { bd = d; be = e; }
     }
     if (be) inp.push(wdx(p.x, be.x) / (W / 2), (be.y - p.y) / 300, 1); else inp.push(0, 0, 0);
+    let bh = null; bd = Infinity;
+    for (const hl of this.holes) {
+      if (hl.y < this.cam - 20 || hl.y > this.cam + H) continue;
+      const d = Math.hypot(wdx(p.x, hl.x), hl.y - p.y);
+      if (d < bd) { bd = d; bh = hl; }
+    }
+    if (bh) inp.push(wdx(p.x, bh.x) / (W / 2), (bh.y - p.y) / 300, 1); else inp.push(0, 0, 0);
     inp.push(this.cool <= 0 ? 1 : 0, 1);
     return inp;
   }
   fitness() { return this.maxH + this.kills * 250 - this.throws * 3; }
 }
 
-// ===== Neural net: 22 inputs -> 12 tanh -> 2 outputs (steer, throw) =====
-const NI = 22, NH = 12, NO = 2;
+// ===== Neural net: 26 inputs -> 12 tanh -> 2 outputs (steer, throw) =====
+const NI = 26, NH = 12, NO = 2;
 const O_B1 = NI * NH, O_W2 = O_B1 + NH, O_B2 = O_W2 + NH * NO, NG = O_B2 + NO;
 function think(g, inp, hid, out) {
   for (let j = 0; j < NH; j++) {
@@ -206,7 +237,7 @@ function randomGenome() { const g = new Float32Array(NG); for (let i = 0; i < NG
 
 // Inputs that flip sign when the world is mirrored left<->right
 const DEADZONE = 0.05;
-const MIRROR = [0, 2, 4, 6, 8, 10, 12, 14, 17];
+const MIRROR = [0, 2, 4, 6, 8, 10, 12, 14, 17, 18, 21];
 class Agent {
   constructor(genome, seed) {
     this.g = genome; this.w = new World(seed);
@@ -300,6 +331,6 @@ class Population {
   }
 }
 if (typeof module !== 'undefined') module.exports = {
-  Population, World, Agent, randomGenome, think, NI, NH, NO, NG, O_W2, O_B1, O_B2,
-  CONST: { W, H, G, MAXVX, PW, DECIDE_EVERY, OBS_DELAY },
+  Population, World, Agent, randomGenome, think, NI, NH, NO, NG, O_W2, O_B1, O_B2, MIRROR,
+  CONST: { W, H, G, MAXVX, PW, DECIDE_EVERY, OBS_DELAY, HOLE_R, MOVE_SPEED },
 };

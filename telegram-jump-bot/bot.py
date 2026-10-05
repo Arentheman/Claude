@@ -51,16 +51,16 @@ def set_dpi_aware():
 
 
 # ============================================================================
-# Нейросеть: 22 входа -> 12 tanh -> 2 выхода (руль, бросок).
+# Нейросеть: 26 входов -> 12 tanh -> 2 выхода (руль, бросок).
 # Раскладка весов совпадает с pretrain/sim.js, поэтому предобученные сети подходят.
 # ============================================================================
-NI, NH, NO = 22, 12, 2
+NI, NH, NO = 26, 12, 2
 O_B1 = NI * NH
 O_W2 = O_B1 + NH
 O_B2 = O_W2 + NH * NO
 NG = O_B2 + NO
 # Входы, которые меняют знак при зеркальном отражении сцены (все «смещения по X»)
-MIRROR = [0, 2, 4, 6, 8, 10, 12, 14, 17]
+MIRROR = [0, 2, 4, 6, 8, 10, 12, 14, 17, 18, 21]
 DEADZONE = 0.05
 
 
@@ -262,6 +262,7 @@ SIM_APEX = 196.0      # высота прыжка в симуляторе, px
 SIM_PERIOD = 59.5     # отскок на ряд вверх в симуляторе, тики (в игре это self.period ≈ 0.585 с)
 SIM_W = 400.0
 SIM_MAXVX = 2.82    # должна совпадать с MAXVX в pretrain/sim.js
+SIM_MOVE_SPEED = 0.49  # скорость движущихся платформ в симуляторе (MOVE_SPEED)
 COOLDOWN_S = 0.35
 
 
@@ -310,10 +311,12 @@ class Tracker:
 
     def update(self, det, t):
         W, H = self.W, self.H
-        self.scroll += self._scroll_delta(det["plats"])
-        self.prev_plats = det["plats"]
+        ds = self._scroll_delta(det["plats"])
+        self.scroll += ds
         dt = (t - self.prev_t) if self.prev_t else 1 / 30
         dt = max(dt, 1e-3)
+        self._plat_speeds(det["plats"], ds, dt)
+        self.prev_plats = det["plats"]
         self.prev_t = t
 
         self._track_enemies(det["enemies"], t)
@@ -342,6 +345,25 @@ class Tracker:
         self.max_h = max(self.max_h, self.start_wy - wy)
         if self.min_wy_since_bounce is None or wy < self.min_wy_since_bounce:
             self.min_wy_since_bounce = wy
+
+    def _plat_speeds(self, plats, ds, dt):
+        """Скорость каждой платформы по горизонтали: движущиеся ездят туда-обратно ~60 px/с.
+        Сглаживаем, а дрожание рамки на 1–2 px (до ~25 px/с) считаем нулём."""
+        for pl in plats:
+            pl["vx"] = 0.0
+            if not self.prev_plats:
+                continue
+            best = None
+            for q in self.prev_plats:
+                if abs(pl["y"] - (q["y"] + ds)) <= 3:
+                    dx = wdx(q["x"], pl["x"], self.W)
+                    if abs(dx) <= 20 and (best is None or abs(dx) < abs(best[0])):
+                        best = (dx, q)
+            if best:
+                raw = best[0] / dt
+                v = 0.7 * best[1].get("vs", 0.0) + 0.3 * raw
+                pl["vs"] = v
+                pl["vx"] = v if abs(v) > 25 else 0.0
 
     def _track_enemies(self, enemies, t):
         """Убийство засчитываем, только если враг, которого видели хотя бы 4 кадра подряд,
@@ -406,7 +428,7 @@ class Tracker:
         self.min_wy_since_bounce = wy
 
     def inputs(self, det, t):
-        """22 входа в тех же единицах, что и в симуляторе."""
+        """26 входов в тех же единицах, что и в симуляторе (порядок — как в pretrain/sim.js sense())."""
         W, H = self.W, self.H
         p = det["player"]
         kv = SIM_APEX / self.apex              # реальные px по вертикали -> px симулятора
@@ -414,6 +436,7 @@ class Tracker:
         vx_sim = self.vx * (SIM_W / W) * tick
         vy_sim = self.vy * kv * tick
         inp = [vx_sim / SIM_MAXVX, vy_sim / 15.0]
+        vel = lambda pl: pl.get("vx", 0.0) * (SIM_W / W) * tick / SIM_MOVE_SPEED
         feet = p["y"] + p["h"] / 2
         base_wy = self.base[1] if self.base else feet - self.scroll
         # Коричневые «ломающиеся» платформы в этой игре сразу восстанавливаются — на них можно прыгать
@@ -422,19 +445,27 @@ class Tracker:
         for i in range(3):
             if i < len(nxt):
                 pl = nxt[i]
-                inp += [wdx(p["x"], pl["x"], W) / (W / 2), (pl["y"] - feet) * kv / 300.0, 0.0, 1.0]
+                inp += [wdx(p["x"], pl["x"], W) / (W / 2), (pl["y"] - feet) * kv / 300.0, vel(pl), 1.0]
             else:
                 inp += [0.0, 0.0, 0.0, 0.0]
-        # Ближайшая платформа под ногами: куда можно спастись, если промахнулся мимо цели
+        # Ближайшая платформа под ногами: куда можно спастись, если промахнулся мимо цели,
+        # и на которой можно переждать, если она едет к нужной
         below = [pl for pl in det["plats"] if pl["y"] >= feet]
         if below:
             pl = min(below, key=lambda q: q["y"])
-            inp += [wdx(p["x"], pl["x"], W) / (W / 2), (pl["y"] - feet) * kv / 300.0, 1.0]
+            inp += [wdx(p["x"], pl["x"], W) / (W / 2), (pl["y"] - feet) * kv / 300.0, 1.0, vel(pl)]
         else:
-            inp += [0.0, 0.0, 0.0]
+            inp += [0.0, 0.0, 0.0, 0.0]
         enemy = self.nearest_enemy(det)
         if enemy:
             inp += [wdx(p["x"], enemy["x"], W) / (W / 2), (enemy["y"] - p["y"]) * kv / 300.0, 1.0]
+        else:
+            inp += [0.0, 0.0, 0.0]
+        # Ближайшая чёрная дыра — её нужно облетать
+        holes = [e for e in det["enemies"] if e.get("kind") == "hole"]
+        if holes:
+            hl = min(holes, key=lambda e: np.hypot(wdx(p["x"], e["x"], W), e["y"] - p["y"]))
+            inp += [wdx(p["x"], hl["x"], W) / (W / 2), (hl["y"] - p["y"]) * kv / 300.0, 1.0]
         else:
             inp += [0.0, 0.0, 0.0]
         inp += [1.0 if t - self.last_throw > COOLDOWN_S else 0.0, 1.0]
@@ -626,7 +657,7 @@ def mouse_position():
 # Эволюция
 # ============================================================================
 # Версия смысла входов сети: при её смене старый population.json не подходит и обучение начинается заново
-POP_VERSION = 5
+POP_VERSION = 6
 
 
 class Population:
