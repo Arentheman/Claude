@@ -144,6 +144,7 @@ class Detector:
             brown = float(np.mean((hue >= 5) & (hue <= 22)))
             plats.append({"x": (x + w / 2) / s, "y": y / s, "w": fw, "type": "b" if brown > 0.5 else "n"})
             plat_mask[y:y + h, x:x + w][comp] = 1
+        plats = merge_overlapping(plats)
         obj = strong & (1 - cv2.dilate(plat_mask, np.ones((3, 3), np.uint8)))
 
         # --- остальные объекты
@@ -242,6 +243,24 @@ class Detector:
 
     def forget(self):
         self.prev_player = None
+
+
+def merge_overlapping(plats):
+    """Треснувшая коричневая платформа иногда находится двумя наложенными рамками.
+    Если рамки то сливаются, то нет, центр прыгает и платформа «едет» — бот начинает
+    ждать её, как движущуюся. Склеиваем такие рамки в одну."""
+    out = []
+    for pl in sorted(plats, key=lambda q: q["x"]):
+        m = next((q for q in out if abs(q["y"] - pl["y"]) < 22
+                  and abs(q["x"] - pl["x"]) < (q["w"] + pl["w"]) / 2), None)
+        if m is None:
+            out.append(dict(pl))
+            continue
+        lo = min(m["x"] - m["w"] / 2, pl["x"] - pl["w"] / 2)
+        hi = max(m["x"] + m["w"] / 2, pl["x"] + pl["w"] / 2)
+        m.update(x=(lo + hi) / 2, w=hi - lo, y=min(m["y"], pl["y"]),
+                 type="b" if "b" in (m["type"], pl["type"]) else m["type"])
+    return out
 
 
 def wdx(a, b, W):

@@ -78,7 +78,7 @@ class Recorder:
             row = {
                 "t": round(t - self.t0, 3), "proc_ms": round(f["proc_ms"], 1),
                 "player": [round(p[k]) for k in ("x", "y", "w", "h")] if p else None,
-                "plats": [[round(q["x"]), round(q["y"])] for q in det["plats"]],
+                "plats": [[round(q["x"]), round(q["y"]), q.get("type", "n"), round(q.get("vx", 0.0))] for q in det["plats"]],
                 "enemies": [[round(e["x"]), round(e["y"])] for e in det["enemies"]],
                 "kinds": [e.get("kind", "") for e in det["enemies"]],
                 "move": f["move"], "throw": bool(f["throw"]), "steer": round(f["steer"], 3),
