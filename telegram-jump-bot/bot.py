@@ -303,6 +303,7 @@ class Tracker:
         self.apex = 0.14 * H
         self.period = 0.6
         self.falling = False
+        self.prev_vy_raw = None
         self.bounces = []
         self.rises = []
         self.min_wy_since_bounce = None
@@ -354,11 +355,16 @@ class Tracker:
             self.vy = 0.5 * self.vy + 0.5 * vy
             # Отскок: падали — и резко полетели вверх. Смотрим на сырую скорость:
             # сглаженная меняет знак слишком плавно, и отскок терялся
+            # Если запрыгнул на платформу у самой вершины прыжка, падения почти нет —
+            # поэтому отскоком считаем и резкий рывок вверх
+            jerk = self.prev_vy_raw is not None and self.prev_vy_raw - vy > 0.3 * H and vy < -0.15 * H
+            recent = self.bounces and t - self.bounces[-1] < 0.2
             if vy > 0.1 * H:
                 self.falling = True
-            elif vy < -0.1 * H and self.falling:
+            elif vy < -0.1 * H and (self.falling or jerk) and not recent:
                 self.falling = False
                 self._on_bounce(det, p, wy, t)
+            self.prev_vy_raw = vy
         self.prev_p = (p["x"], wy)
         if self.start_wy is None:
             self.start_wy = wy
@@ -460,6 +466,10 @@ class Tracker:
         vel = lambda pl: pl.get("vx", 0.0) * (SIM_W / W) * tick / SIM_MOVE_SPEED
         feet = p["y"] + p["h"] / 2
         base_wy = self.base[1] if self.base else feet - self.scroll
+        # После пружины или ракеты персонаж улетает много выше обычного прыжка:
+        # платформа старта уже далеко внизу, и цели нужно искать над ним, а не над ней
+        if base_wy - (feet - self.scroll) > 1.1 * self.apex:
+            base_wy = feet - self.scroll + 0.3 * self.apex
         # Коричневые «ломающиеся» платформы в этой игре сразу восстанавливаются — на них можно прыгать
         nxt = [pl for pl in det["plats"] if pl["y"] - self.scroll < base_wy - 0.01 * H]
         nxt.sort(key=lambda pl: -pl["y"])
