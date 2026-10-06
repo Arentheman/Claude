@@ -20,6 +20,7 @@ import json
 import os
 import random
 import sys
+import math
 import time
 
 import cv2
@@ -197,7 +198,16 @@ class Detector:
         enemies = [b for b in blobs if b is not player and b["kind"] in ("pig", "ghost", "hole", "enemy")]
         if player is not None:
             self.prev_player = (player["x"], player["y"])
-        return {"W": W, "H": H, "plats": plats, "player": player, "enemies": enemies}
+        # Пружина стоит на платформе: прыжок с такой платформы уносит очень высоко
+        for b in blobs:
+            if b is player or b["kind"] not in ("item", "player?"):
+                continue
+            bottom = b["y"] + b["h"] / 2
+            for pl in plats:
+                if abs(wdx(pl["x"], b["x"], W)) < pl["w"] / 2 and -0.02 * H < bottom - pl["y"] < 0.02 * H and b["h"] < 0.07 * H:
+                    pl["spring"] = (b["x"], b["w"])
+        return {"W": W, "H": H, "plats": plats, "player": player, "enemies": enemies,
+                "items": [b for b in blobs if b is not player and b["kind"] in ("item", "player?")]}
 
     _ghost_tpl = None
 
@@ -305,6 +315,9 @@ class Tracker:
         self.falling = False
         self.prev_vy_raw = None
         self.bounces = []
+        self.flight = []         # (t, мировой y) персонажа с последнего отскока
+        self.vx_raw = 0.0
+        self.last_move = 0
         self.rises = []
         self.min_wy_since_bounce = None
         self.last_throw = -9.0
@@ -365,7 +378,10 @@ class Tracker:
                 self.falling = False
                 self._on_bounce(det, p, wy, t)
             self.prev_vy_raw = vy
+            self.vx_raw = vx
         self.prev_p = (p["x"], wy)
+        if not self.flight or self.flight[-1][0] != t:
+            self.flight = (self.flight + [(t, wy)])[-5:]
         if self.start_wy is None:
             self.start_wy = wy
             self.base = (p["x"], wy + p["h"] / 2)
@@ -453,6 +469,27 @@ class Tracker:
         self.bounces = (self.bounces + [t])[-13:]
         self.base = (best[1]["x"] if best else p["x"], base_y)
         self.min_wy_since_bounce = wy
+        self.flight = [(t, wy)]
+
+    def gravity(self):
+        """Гравитация в px/с², выведенная из высоты и длительности прыжка (как в симуляторе)."""
+        tick = self.period / SIM_PERIOD
+        return SIM_G / (SIM_APEX / self.apex) / (tick * tick)
+
+    def phys_vy(self, t):
+        """Вертикальная скорость сейчас: по точкам с последнего отскока при известной гравитации.
+        Сглаженная скорость отстаёт на кадр-два, и сразу после отскока ещё «падает»."""
+        g = self.gravity()
+        pts = getattr(self, "flight", [])
+        if len(pts) < 2:
+            return -math.sqrt(2 * g * self.apex) + (g * (t - pts[0][0]) if pts else 0.0)
+        tn = pts[-1][0]
+        xs = np.array([ti - tn for ti, _ in pts])
+        ys = np.array([yi - g / 2 * x * x for (_, yi), x in zip(pts, xs)])
+        n, sx, sy, sxx, sxy = len(xs), xs.sum(), ys.sum(), (xs * xs).sum(), (xs * ys).sum()
+        den = n * sxx - sx * sx
+        v = (n * sxy - sx * sy) / den if den > 1e-9 else self.vy
+        return float(v + g * (t - tn))
 
     def inputs(self, det, t):
         """26 входов в тех же единицах, что и в симуляторе (порядок — как в pretrain/sim.js sense())."""
@@ -522,6 +559,151 @@ class Tracker:
     def meters(self):
         # Сверено со счётчиком игры: старт показывает 7 м, дальше ~20.5 px подъёма на метр
         return 7 + self.max_h * (1080.0 / self.H) / PX_PER_M
+
+
+# ============================================================================
+# Автопилот: тот же «учитель», что в симуляторе (pretrain/teacher.js), но на настоящей игре
+# ============================================================================
+AUTOPILOT = "autopilot"  # вместо генома: играть физическим планировщиком
+SIM_G = 0.32          # гравитация симулятора, px/тик²
+SIM_HOLE_R = 34.0
+SPRING_BONUS = 400.0  # пружина уносит на несколько рядов вверх — берём её, если долетаем
+
+
+def _land_time(vy, dy):
+    """Через сколько тиков ноги, двигаясь вниз, окажутся на dy ниже текущего места (как в teacher.js)."""
+    a, b, c = SIM_G / 2, vy + SIM_G / 2, -dy
+    disc = b * b - 4 * a * c
+    if disc < 0:
+        return None
+    t = (-b + math.sqrt(disc)) / (2 * a)
+    return t if t > 0 else None
+
+
+def _reach(vx, d, t):
+    v, s, n = vx, 0.0, int(t)
+    for _ in range(n):
+        v += (d * SIM_MAXVX - v) * 0.25
+        s += v * d
+    return s
+
+
+def plan(tr, det, t, springs=True, latency=0.0):
+    """Решение физикой, без нейросети. Всё переводим в единицы симулятора: там этот учитель
+    проверен, в том числе с задержкой реакции и шумом распознавания.
+    latency — сколько секунд прошло с момента снимка экрана плюс запаздывание игры:
+    на это время положение персонажа досчитываем вперёд.
+    Возвращает (движение, бросок, цель)."""
+    W, H = tr.W, tr.H
+    p = det["player"]
+    sx = SIM_W / W
+    kv = SIM_APEX / tr.apex
+    tick = tr.period / SIM_PERIOD
+    vx = tr.vx_raw * sx * tick
+    vy = tr.phys_vy(t) * kv * tick
+    feet = p["y"] + p["h"] / 2
+    holes = [e for e in det["enemies"] if e.get("kind") == "hole"]
+    base_wy = tr.base[1] if tr.base else feet - tr.scroll
+
+    # Платформы относительно ног, в px симулятора (dy > 0 — ниже ног)
+    rel = []
+    for pl in det["plats"]:
+        spring = pl.get("spring") if springs else None
+        cx, half = (spring[0], spring[1] * sx / 2) if spring else (pl["x"], pl["w"] * sx / 2)
+        rel.append((pl, wdx(p["x"], cx, W) * sx, (pl["y"] - feet) * kv, half, bool(spring),
+                    abs(wdx(p["x"], pl["x"], W) * sx), pl["w"] * sx / 2))
+
+    # Досчитываем полёт вперёд на время задержки, с отскоками от платформ
+    qx = qy = 0.0
+    n = int(round(latency / tick))
+    bounced = None
+    for _ in range(min(n, 30)):
+        vx += (tr.last_move * SIM_MAXVX - vx) * 0.25
+        qx += vx
+        oy = qy
+        vy += SIM_G
+        qy += vy
+        if vy > 0:
+            for r in rel:
+                pl, _, dy = r[0], r[1], r[2]
+                px = wdx(p["x"], pl["x"], W) * sx
+                ddx = px - qx
+                ddx = (ddx + SIM_W / 2) % SIM_W - SIM_W / 2
+                if oy <= dy <= qy and abs(ddx) < r[6] + 13:
+                    vy = -19.0 if (r[4] and abs(((r[1] - qx) + SIM_W / 2) % SIM_W - SIM_W / 2) < r[3] + 10) else -11.2
+                    qy = dy
+                    bounced = pl
+                    break
+    if bounced is not None:
+        base_wy = bounced["y"] - tr.scroll
+    base_pl = bounced
+    if base_pl is None and tr.base:
+        cand = [pl for pl in det["plats"] if abs(pl["y"] - tr.scroll - base_wy) < 0.015 * H
+                and abs(wdx(pl["x"], tr.base[0], W)) < 0.2 * W]
+        if cand:
+            base_pl = min(cand, key=lambda pl: abs(wdx(pl["x"], tr.base[0], W)))
+
+    prev = getattr(tr, "plan_target", None)
+    best = up = None
+    for pl, d0, dy0, half, spring, _, _ in rel:
+        dy = dy0 - qy
+        d = ((d0 - qx) + SIM_W / 2) % SIM_W - SIM_W / 2
+        if dy < -1 and vy > 0:                # выше ног, а уже падаем — не достать
+            continue
+        if _land_time(vy, dy - 12) is None:   # в высшей точке нужен запас по высоте
+            continue
+        lt = _land_time(vy, dy)
+        if lt is None or lt < 2:
+            continue
+        # Где платформа будет, когда долетим (движущиеся ездят туда-обратно, поэтому не дальше ~45 px)
+        d += max(-45.0, min(45.0, pl.get("vx", 0.0) * sx * tick * (lt + n)))
+        tol = half + 7
+        cx = pl["spring"][0] if spring else pl["x"]
+        danger = any(abs(wdx(hl["x"], cx, W)) * sx < max(SIM_HOLE_R, hl["w"] * sx / 2) + 22
+                     and (pl["y"] - 230 / kv) < hl["y"] < pl["y"] + 20 / kv for hl in holes)
+        need = max(0.0, abs(d) - tol)
+        margin = _reach(vx, 1 if d >= 0 else -1, lt) - need
+        # Уже выбранную цель держим, пока до неё можно дотянуться: из-за задержки расчёт
+        # чуть пессимистичен, и без этого бот метался между целями (и между двумя
+        # платформами на одной высоте) и падал мимо обеих
+        mine = prev is not None and abs(wdx(prev[0], pl["x"], W)) < 0.06 * W and abs(prev[1] - (pl["y"] - tr.scroll)) < 0.03 * H
+        if margin >= (-10 if mine else 8) and not danger:
+            score = -dy + (SPRING_BONUS if spring else 0.0) + (40.0 if mine else 0.0)
+        else:
+            score = -1e6 + margin
+        if best is None or score > best[0]:
+            best = (score, pl, d, half)
+        if pl["y"] - tr.scroll < base_wy - 1 / kv:
+            m = margin - (20 if danger else 0)
+            if up is None or m > up[0]:
+                up = (m, pl, d, half)
+    # Долетаем надёжно только обратно на свою платформу — пробуем ближайшую по шансам выше
+    # (на движущейся лучше подождать, пока она подвезёт к нужной)
+    if best and base_pl is not None and best[1] is base_pl and not base_pl.get("vx") and up and up[0] > -25:
+        best = (0.0,) + up[1:]
+    move, target = 0, None
+    if best:
+        _, target, d, half = best
+        tr.plan_target = (target["x"], target["y"] - tr.scroll)
+        after = d - 3 * vx  # отпустим клавишу — ещё немного проскользим
+        if abs(after) > max(4.0, half - 10):
+            move = 1 if after > 0 else -1
+    # Чёрная дыра на пути вверх — уходим в сторону и к ней не приближаемся
+    rise = vy * vy / (2 * SIM_G) if vy < 0 else 0.0
+    for hl in holes:
+        r = max(SIM_HOLE_R, hl["w"] * sx / 2)
+        dx = ((wdx(p["x"], hl["x"], W) * sx - qx) + SIM_W / 2) % SIM_W - SIM_W / 2
+        dyh = (hl["y"] - p["y"]) * kv - qy
+        if dyh >= 30 or dyh <= -(rise + 30):
+            continue
+        away = -1 if dx > 0 else 1
+        if abs(dx) < r + 18:
+            move = away
+        elif abs(dx) < r + 45 and move == -away:
+            move = 0
+    enemy = tr.nearest_enemy(det)
+    throw = enemy is not None and t - tr.last_throw > COOLDOWN_S
+    return move, throw, target
 
 
 # ============================================================================
@@ -832,12 +1014,19 @@ def play_run(screen, ctl, hk, genome, show=True, info="", act=True, on_frame=Non
         move, throw, nxt, enemy, steer, inp = 0, False, [], None, 0.0, None
         if det["player"] is not None:
             inp, nxt, enemy = tr.inputs(det, t)
-            if genome is not None:
+            if genome is AUTOPILOT:
+                # снимок сделан в момент t; до игры нажатие дойдёт ещё через ~кадр
+                move, throw, tgt = plan(tr, det, t, latency=time.time() - t + 0.03)
+                nxt = [tgt] if tgt is not None else []
+                if not tr.bounces and t - t_start < 3:
+                    move = 0
+            elif genome is not None:
                 move, throw, steer = decide(genome, inp)
                 # Попытка начинается с персонажа в воздухе над стартовой платформой:
                 # до первого приземления стоим на месте, иначе он пролетает мимо неё
                 if not tr.bounces and t - t_start < 3:
                     move = 0
+            tr.last_move = move
             if act:
                 ctl.move(move)
                 if throw and enemy and t - tr.last_throw > COOLDOWN_S:

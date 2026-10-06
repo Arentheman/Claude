@@ -37,7 +37,7 @@ function reach(vx, dir, t) {
   return d;
 }
 
-function teacher(w) {
+function teacher(w, opt = {}) {
   const p = w.p, feet = p.y + 20;
   let best = null, up = null;
   for (const pl of w.plats) {
@@ -52,7 +52,11 @@ function teacher(w) {
     const danger = w.holes.some(hl => Math.abs(wdx(hl.x, lx + PW / 2)) < HOLE_R + 22 && hl.y < pl.y + 20 && hl.y > pl.y - 230);
     const d = wdx(p.x, lx + PW / 2), need = Math.max(0, Math.abs(d) - TOL);
     const margin = reach(p.vx, Math.sign(d) || 1, Math.floor(t)) - need;
-    const score = margin >= 8 && !danger ? -pl.y : -1e6 + margin;  // выше — лучше, если долетаем с запасом
+    // Уже выбранную цель не бросаем, пока до неё ещё можно дотянуться: с задержкой реакции
+    // запас по расчёту чуть меньше настоящего, и учитель метался между целями
+    const mine = pl === w._tgt;
+    const ok = margin >= (mine ? (opt.hold ?? 8) : 8) && !danger;
+    const score = ok ? -pl.y + (mine ? (opt.keep || 0) : 0) : -1e6 + margin;  // выше — лучше, если долетаем с запасом
     if (!best || score > best.score) best = { pl, d, t, score, margin };
     if (pl.y < w.base.y - 1 && (!up || margin - (danger ? 20 : 0) > up.margin)) up = { pl, d, t, margin: margin - (danger ? 20 : 0) };
   }
@@ -61,6 +65,7 @@ function teacher(w) {
   // (кроме движущейся: на ней лучше подождать, пока она подвезёт к нужной платформе)
   if (best && best.pl === w.base && w.base.type !== 'm' && up && up.margin > -25) best = up;
   let move = 0;
+  if (best) w._tgt = best.pl;
   if (best) {
     // куда снесёт, если отпустить клавишу сейчас: скорость гаснет на 25% за тик → ещё ~3·vx
     const after = best.d - 3 * p.vx;

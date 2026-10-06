@@ -329,6 +329,9 @@ class Worker:
                 info = f"gen {pop.gen} net {pop.idx + 1}/{len(pop.genomes)}"
                 self.status(f"Учусь: поколение {pop.gen}, попытка {pop.idx + 1} из {len(pop.genomes)}.\n"
                             "Не трогайте мышь и клавиатуру. F9 — пауза, F10 — стоп.")
+            elif self.mode == "auto":
+                g, info = bot.AUTOPILOT, "autopilot"
+                self.status("Играет автопилот: считает прыжки по физике игры. F9 — пауза, F10 — стоп.")
             else:
                 g, info = genome, "best net"
                 self.status("Играет лучшая сеть. F9 — пауза, F10 — стоп.")
@@ -375,19 +378,22 @@ class App:
         right = tk.Frame(root, bg="#f4f6f8")
         right.pack(side="left", fill="both", expand=True, padx=(0, 12), pady=12)
         tk.Label(right, text="Нейро-прыгун", font=("Segoe UI", 20, "bold"), bg="#f4f6f8", fg="#1d2733").pack(anchor="w")
-        tk.Label(right, text="Откройте игру в Telegram Desktop\nи нажмите «Учиться».", justify="left",
+        tk.Label(right, text="Откройте игру в Telegram Desktop\nи нажмите «Автопилот».", justify="left",
                  font=("Segoe UI", 11), bg="#f4f6f8", fg="#566371").pack(anchor="w", pady=(0, 10))
 
         btns = tk.Frame(right, bg="#f4f6f8")
         btns.pack(anchor="w", pady=4)
+        self.b_auto = ttk.Button(btns, text="★  Автопилот (лучше всего проходит)", style="Big.TButton",
+                                 command=lambda: self.start("auto"))
+        self.b_auto.grid(row=0, column=0, columnspan=2, sticky="ew", padx=(0, 8), pady=(0, 8))
         self.b_train = ttk.Button(btns, text="▶  Учиться", style="Big.TButton", command=lambda: self.start("train"))
         self.b_play = ttk.Button(btns, text="Играть лучшей сетью", style="Big.TButton", command=lambda: self.start("play"))
         self.b_watch = ttk.Button(btns, text="Проверить зрение", style="Big.TButton", command=lambda: self.start("watch"))
         self.b_stop = ttk.Button(btns, text="■  Стоп (F10)", style="Big.TButton", command=self.stop, state="disabled")
         for i, b in enumerate((self.b_train, self.b_play, self.b_watch, self.b_stop)):
-            b.grid(row=i // 2, column=i % 2, sticky="ew", padx=(0, 8), pady=(0, 8))
+            b.grid(row=1 + i // 2, column=i % 2, sticky="ew", padx=(0, 8), pady=(0, 8))
         self.b_rec = ttk.Button(btns, text="●  Записать для анализа", style="Big.TButton", command=self.toggle_record)
-        self.b_rec.grid(row=2, column=0, columnspan=2, sticky="ew", padx=(0, 8))
+        self.b_rec.grid(row=3, column=0, columnspan=2, sticky="ew", padx=(0, 8))
 
         self.status = tk.Label(right, text="Готов.", font=("Segoe UI", 12), bg="#ffffff", fg="#1d2733",
                                justify="left", anchor="nw", wraplength=380, padx=12, pady=10, relief="solid", bd=1)
@@ -434,7 +440,7 @@ class App:
         w = Worker(self, mode)
         self.worker = threading.Thread(target=w.run, daemon=True)
         self.worker.start()
-        for b in (self.b_train, self.b_play, self.b_watch):
+        for b in (self.b_auto, self.b_train, self.b_play, self.b_watch):
             b.config(state="disabled")
         self.b_stop.config(state="normal")
 
@@ -514,7 +520,7 @@ class App:
                     self.stats.config(text=f"Поколение {val['gen']}   рекорд {max(0, val['best']):.0f}   последняя попытка {val['last']:.0f}")
                 elif kind == "done":
                     self.worker = None
-                    for b in (self.b_train, self.b_play, self.b_watch):
+                    for b in (self.b_auto, self.b_train, self.b_play, self.b_watch):
                         b.config(state="normal")
                     self.b_stop.config(state="disabled")
                     if not self.status.cget("text").startswith("Ошибка"):
