@@ -24,16 +24,17 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install numpy opencv-python-headless mss pynput pydirectinput pillow pyinstaller
+        run: pip install numpy opencv-python-headless mss pynput pydirectinput pillow pyinstaller dxcam
 
       - name: Smoke test
-        run: python -c "import bot, gui; import numpy as np; g = np.zeros(bot.NG); print(bot.decide(g, np.zeros(bot.NI)))"
+        run: python -c "import bot, gui; import numpy as np; g = np.zeros(bot.NG); print(bot.decide(g, np.zeros(bot.NI)))" && python -c "import dxcam; print('dxcam', dxcam.__name__)"
 
       - name: Build exe
         run: >
           pyinstaller --noconfirm --onefile --windowed --name NeuroJumper
           --add-data "pretrained.json;." --add-data "sprites;sprites"
           --hidden-import pynput.keyboard._win32 --hidden-import pynput.mouse._win32
+          --collect-all dxcam --collect-submodules comtypes
           gui.py
 
       - uses: actions/upload-artifact@v4

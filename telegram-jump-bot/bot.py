@@ -110,7 +110,8 @@ class Detector:
         s = self.scale
         small8 = cv2.resize(bgr, None, fx=s, fy=s, interpolation=cv2.INTER_AREA)
         small = small8.astype(np.int16)
-        bg = np.median(small, axis=1, keepdims=True)
+        # фон строки: медиана по каждому 4-му пикселю — так же точно, но вдвое быстрее
+        bg = np.median(small[:, ::4], axis=1, keepdims=True)
         diff = np.abs(small - bg).sum(axis=2)
         darker = bg.sum(axis=2) - small.sum(axis=2)
         # Ночью фон тёмный и объекты могут быть светлее его — там важна сама разница с фоном
@@ -188,7 +189,12 @@ class Detector:
                 kind = "enemy"
             blobs.append({"x": (x + w / 2) / s, "y": cy, "w": fw, "h": fh, "kind": kind, **f})
 
-        for g in self._ghosts(bgr, W, H):
+        # Поиск призраков по образцу — самая долгая часть; призраки двигаются медленно,
+        # поэтому ищем через кадр, а между поисками берём прошлый результат
+        self._nframe = getattr(self, "_nframe", 0) + 1
+        if self._nframe % 2 or not hasattr(self, "_ghost_cache"):
+            self._ghost_cache = self._ghosts(bgr, W, H)
+        for g in self._ghost_cache:
             blobs = [b for b in blobs if abs(b["x"] - g["x"]) + abs(b["y"] - g["y"]) > 0.08 * W]
             blobs.append(g)
 
@@ -588,7 +594,7 @@ def _reach(vx, d, t):
     return s
 
 
-def plan(tr, det, t, springs=True, latency=0.0):
+def plan(tr, det, t, springs=True, latency=0.0, dbg=None):
     """Решение физикой, без нейросети. Всё переводим в единицы симулятора: там этот учитель
     проверен, в том числе с задержкой реакции и шумом распознавания.
     latency — сколько секунд прошло с момента снимка экрана плюс запаздывание игры:
@@ -659,8 +665,11 @@ def plan(tr, det, t, springs=True, latency=0.0):
         d += max(-45.0, min(45.0, pl.get("vx", 0.0) * sx * tick * (lt + n)))
         tol = half + 7
         cx = pl["spring"][0] if spring else pl["x"]
+        # Над платформой чёрная дыра — отскочишь прямо в неё. Пружина подбрасывает втрое выше
+        # обычного прыжка, поэтому над ней дыру ищем на всю высоту полёта
+        reach_up = (400 if spring else 230) / kv
         danger = any(abs(wdx(hl["x"], cx, W)) * sx < max(SIM_HOLE_R, hl["w"] * sx / 2) + 22
-                     and (pl["y"] - 230 / kv) < hl["y"] < pl["y"] + 20 / kv for hl in holes)
+                     and (pl["y"] - reach_up) < hl["y"] < pl["y"] + 20 / kv for hl in holes)
         need = max(0.0, abs(d) - tol)
         margin = _reach(vx, 1 if d >= 0 else -1, lt) - need
         # Уже выбранную цель держим, пока до неё можно дотянуться: из-за задержки расчёт
@@ -668,9 +677,14 @@ def plan(tr, det, t, springs=True, latency=0.0):
         # платформами на одной высоте) и падал мимо обеих
         mine = prev is not None and abs(wdx(prev[0], pl["x"], W)) < 0.06 * W and abs(prev[1] - (pl["y"] - tr.scroll)) < 0.03 * H
         if margin >= (-10 if mine else 8) and not danger:
-            score = -dy + (SPRING_BONUS if spring else 0.0) + (40.0 if mine else 0.0)
+            # пружина имеет смысл только выше своей платформы: за пружиной внизу бот
+            # бесконечно прыгал на месте, приземляясь на промежуточные платформы
+            above = pl["y"] - tr.scroll < base_wy - 1 / kv
+            score = -dy + (SPRING_BONUS if spring and above else 0.0) + (40.0 if mine else 0.0)
         else:
             score = -1e6 + margin
+        if dbg is not None:
+            dbg.append((int(pl["x"]), int(pl["y"]), round(dy), round(d), round(lt), round(margin), danger, round(score)))
         if best is None or score > best[0]:
             best = (score, pl, d, half)
         if pl["y"] - tr.scroll < base_wy - 1 / kv:
@@ -714,6 +728,29 @@ class Screen:
         import mss
         self.sct = mss.mss()
         self.region = region
+        self._cam = None       # быстрый захват экрана Windows (DXGI), если доступен
+        self._cam_failed = False
+        self._last = None
+
+    def _grab_fast(self, r):
+        """DXGI отдаёт кадр за 1–3 мс против 10–20 мс у обычного захвата. Если не вышло —
+        молча работаем по-старому."""
+        if self._cam_failed or sys.platform != "win32":
+            return None
+        try:
+            if self._cam is None:
+                import dxcam
+                self._cam = dxcam.create(output_color="BGR")
+            box = (r["left"], r["top"], r["left"] + r["width"], r["top"] + r["height"])
+            img = self._cam.grab(region=box)
+            if img is None:  # экран не изменился с прошлого раза
+                return self._last
+            self._last = img
+            return img
+        except Exception as e:
+            print(f"Быстрый захват экрана недоступен ({e}), работаю обычным")
+            self._cam_failed = True
+            return None
 
     def monitor(self, index=1):
         m = self.sct.monitors[index]
@@ -721,6 +758,9 @@ class Screen:
 
     def grab(self):
         r = self.region
+        img = self._grab_fast(r)
+        if img is not None:
+            return img
         img = np.array(self.sct.grab({"left": r["left"], "top": r["top"], "width": r["width"], "height": r["height"]}))
         return img[:, :, :3]
 
@@ -1046,6 +1086,13 @@ def play_run(screen, ctl, hk, genome, show=True, info="", act=True, on_frame=Non
             cv2.imshow(DEBUG_WINDOW, draw_debug(img, det, tr, nxt, enemy, move, throw, f"{info} {fps:.0f} fps"))
             if cv2.waitKey(1) & 0xFF == 27:
                 hk.quit = True
+        # Игра встала: высота не растёт, экран не прокручивается, а персонаж «висит».
+        # Так было на записи 459 м — бот при этом ничего сделать не может, только сообщить
+        if tr.max_h > getattr(tr, "_best_h", -1):
+            tr._best_h, tr._best_t = tr.max_h, t
+        if t - getattr(tr, "_best_t", t) > 12 and not getattr(tr, "_froze_said", False):
+            tr._froze_said = True
+            print("Высота не растёт уже 12 секунд — похоже, игра зависла. Проверьте окно игры.")
         # Смерть: персонаж пропал или улетел за нижний край
         p = det["player"]
         if t - tr.last_seen > 0.8 and t - t_start > 2:

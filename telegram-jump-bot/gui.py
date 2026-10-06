@@ -9,6 +9,7 @@ import os
 import queue
 import sys
 import threading
+import types
 import time
 import tkinter as tk
 from tkinter import ttk
@@ -356,6 +357,8 @@ class App:
         self.worker = None
         self.frame = None
         self.nframe = 0
+        self.draw_q = queue.Queue(maxsize=6)
+        self.draw_thread = None
         global RECORDER
         self.recorder = RECORDER = Recorder()
         self.photo = None
@@ -471,7 +474,26 @@ class App:
         self.root.geometry(f"+{x}+{max(0, reg['top'])}")
 
     def set_frame(self, f):
-        """Вызывается рабочим потоком на каждом кадре."""
+        """Вызывается рабочим потоком на каждом кадре. Рисование и запись — в отдельном
+        потоке, чтобы не задерживать реакцию бота (рамки рисуются ~7 мс на кадр)."""
+        tr = f["tr"]
+        snap = types.SimpleNamespace(scroll=tr.scroll, vx=tr.vx, vy=tr.vy, apex=tr.apex, period=tr.period,
+                                     base=tr.base, max_h=tr.max_h, kills=tr.kills)
+        snap.height_label = lambda h=int(tr.max_h): h
+        f = dict(f, tr=snap)
+        if self.draw_thread is None:
+            self.draw_thread = threading.Thread(target=self._draw_loop, daemon=True)
+            self.draw_thread.start()
+        try:
+            self.draw_q.put_nowait(f)
+        except queue.Full:
+            pass  # не успеваем рисовать — пропускаем кадр, игра важнее
+
+    def _draw_loop(self):
+        while True:
+            self._draw(self.draw_q.get())
+
+    def _draw(self, f):
         self.nframe += 1
         need_preview = self.nframe % 2 == 0
         if not (need_preview or self.recorder.active):
