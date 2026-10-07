@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+debug/
+calibration_check.png
+config.json
+*.mp4
