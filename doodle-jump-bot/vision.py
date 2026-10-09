@@ -84,6 +84,7 @@ def to_canon(frame_bgr):
 # В собранном .exe данные лежат во временной папке распаковки (sys._MEIPASS).
 TEMPLATE_DIR = os.path.join(getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__))), "templates")
 PLAYER_MATCH_MIN = 0.5
+MASK_ERODE = 9
 
 
 def load_player_templates(scale=SCALE):
@@ -94,7 +95,9 @@ def load_player_templates(scale=SCALE):
             continue
         rgba = cv2.imread(os.path.join(TEMPLATE_DIR, name), cv2.IMREAD_UNCHANGED)
         g = cv2.cvtColor(rgba[..., :3], cv2.COLOR_BGR2GRAY)
-        m = rgba[..., 3]
+        # Маску сжимаем: по краю спрайта в шаблон попала кайма дневного фона,
+        # из-за которой ночью (на тёмном фоне) герой переставал узнаваться.
+        m = cv2.erode(rgba[..., 3], np.ones((MASK_ERODE, MASK_ERODE), np.uint8))
         size = (g.shape[1] // scale, g.shape[0] // scale)
         g = cv2.resize(g, size, interpolation=cv2.INTER_AREA)
         m = (cv2.resize(m, size, interpolation=cv2.INTER_AREA) > 127).astype(np.uint8) * 255
@@ -266,8 +269,18 @@ class Detector:
             for c in cands:
                 if abs(c[0] - tp.x) < 20 and abs(c[1] - tp.y) < 24:
                     best = c
-        elif best is not None:
-            scene.player = Blob(best[0], best[1], best[2], best[3])
+            # Героя (особенно в «пузыре») детектор свиней иногда принимает
+            # за монстра — убираем «монстров», стоящих ровно на герое.
+            if self.player_score >= 0.6:
+                scene.monsters = [m for m in scene.monsters
+                                  if not (abs(m.x - tp.x) < m.w / 2 and abs(m.y - tp.y) < m.h / 2)]
+        elif best is not None and self.prev_player is not None:
+            # Запасной вариант по цветным пятнам — только рядом с тем местом,
+            # где герой был только что: иначе ночью за героя принимался призрак.
+            dx = abs(best[0] - self.prev_player.x)
+            dx = min(dx, W - dx)
+            if dx < 60 and abs(best[1] - self.prev_player.y) < 90:
+                scene.player = Blob(best[0], best[1], best[2], best[3])
         self.prev_player = scene.player
 
         # Бонусы: объекты, стоящие прямо на платформе (пружины, ракеты, бусты).

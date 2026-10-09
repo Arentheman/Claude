@@ -44,7 +44,8 @@ class Planner:
         self.adapt = cfg.get("adapt_physics", True)
         self.apex_margin = cfg.get("apex_margin", 10.0)
         self.x_margin = cfg.get("x_margin", 6.0)
-        self.hole_k = cfg.get("hole_radius_k", 0.25)   # радиус опасной зоны дыры = k * размер + 22
+        self.hole_k = cfg.get("hole_radius_k", 0.6)    # радиус опасной зоны дыры = k * размер + 50
+        # (по записи: ближе ~80 px к центру дыра затягивает героя со скоростью ~170 px/с)
         self.reset()
 
     def reset(self):
@@ -151,7 +152,7 @@ class Planner:
             y = p.y + vy * t + 0.5 * ph.gravity * t * t
             for h in sc.holes:
                 # Убивает только касание центра дыры — держим запас вокруг него.
-                r = max(h.w, h.h) * self.hole_k + 22
+                r = max(h.w, h.h) * self.hole_k + 50
                 if wrap_dx(x - h.x, W) ** 2 + (y - h.y) ** 2 < r * r:
                     return True
             for m in sc.monsters:
@@ -165,7 +166,7 @@ class Planner:
                     return True
         return False
 
-    def _clearance(self, sc: Scene, p, move, horizon=0.75):
+    def _clearance(self, sc: Scene, p, move, horizon=0.75, travel=None):
         """Короткая симуляция (с отскоками от платформ) при заданной команде.
         Возвращает минимальный запас до опасности: < 0 — столкновение."""
         ph = self.ph
@@ -175,9 +176,11 @@ class Planner:
         dt = 0.02
         best = 1e9
         t = 0.0
+        moved = 0.0
         while t < horizon:
-            if t >= ph.latency:
+            if t >= ph.latency and (travel is None or moved < travel):
                 x = (x + dirv * ph.run_speed * dt) % W
+                moved += ph.run_speed * dt
             oy = y
             vy += ph.gravity * dt
             y += vy * dt
@@ -187,7 +190,7 @@ class Planner:
                         vy, y = -ph.jump_speed, q.y - ph.feet
                         break
             for h in sc.holes:
-                r = max(h.w, h.h) * self.hole_k + 22
+                r = max(h.w, h.h) * self.hole_k + 50
                 d = math.hypot(wrap_dx(x - h.x, W), y - h.y) - r
                 best = min(best, d)
             for m in sc.monsters:
@@ -200,12 +203,13 @@ class Planner:
             t += dt
         return best
 
-    def _safe_move(self, sc: Scene, p, move):
-        """Если запланированное движение ведёт в монстра/дыру — берём безопасное."""
+    def _safe_move(self, sc: Scene, p, move, travel=None):
+        """Если запланированное движение ведёт в монстра/дыру — берём безопасное.
+        travel — сколько px бот собирается пройти (дальше он остановится)."""
         if not sc.holes and not sc.monsters:
             return move, False
         options = [move] + [m for m in (None, "left", "right") if m != move]
-        scores = [(self._clearance(sc, p, m), m) for m in options]
+        scores = [(self._clearance(sc, p, m, travel=travel if m == move else None), m) for m in options]
         if scores[0][0] > 4:
             return move, False
         safest = max(scores, key=lambda c: c[0])
@@ -274,10 +278,20 @@ class Planner:
             # После приземления герой снова взлетит вертикально вверх —
             # проверяем, что над точкой приземления нет дыры или монстра.
             lx = q.x + q.vx * t
+            rise = ph.jump_speed ** 2 / (2 * ph.gravity)
+            away, blocked = None, False
             for h in sc.holes:
-                # (при взлёте предохранитель всё равно уведёт в сторону от дыры)
-                if abs(wrap_dx(h.x - lx, W)) < max(h.w, h.h) * self.hole_k + 40 and q.y - 230 < h.y < q.y:
-                    score -= 160
+                r = max(h.w, h.h) * self.hole_k + 50
+                if not (q.y - ph.feet - rise - r < h.y < q.y + r):
+                    continue
+                hdx = wrap_dx(lx - h.x, W)            # где платформа относительно дыры
+                far = abs(hdx) + q.w / 2 - 8          # дальний от дыры край платформы
+                if far < r + 6:
+                    blocked = True                     # с этой платформы взлетим в дыру
+                elif abs(hdx) < r + q.w / 2:
+                    away = 1 if hdx >= 0 else -1       # садиться на дальний край
+            if blocked:
+                continue
             for m in sc.monsters:
                 if abs(wrap_dx(m.x - lx, W)) < m.w / 2 + 28 and q.y - 230 < m.y < q.y:
                     score -= 0 if self.hunting else (100 if self.aim_fire else 300)
@@ -293,11 +307,17 @@ class Planner:
                 # даже ниже, лишь бы зайти к верхним с другой стороны.
                 score = -0.2 * q.y + min(abs(wrap_dx(q.x - self.bounces[-1][1], W)), 200) * 2
             if best is None or score > best[0]:
-                best = (score, q, xt, dx, t, x0, reach)
+                best = (score, q, xt, dx, t, x0, reach, away)
         if best is None:
             return None
+        score, q, xt, dx, t, x0, reach, away = best
+        if away is not None:
+            # Рядом дыра: садимся на дальний от неё край, взлёт пройдёт мимо.
+            off = away * (q.w / 2 - 6)
+            dx2 = self._dx_keep_dir(wrap_dx(xt + off - x0, W), W)
+            if abs(dx2) <= reach - abs(off) - self.x_margin:
+                return score, q, xt + off, dx2, t
         # Садимся не в центр, а на тот край цели, что ближе к следующей ступеньке.
-        score, q, xt, dx, t, x0, reach = best
         nxt = [q2 for q2 in sc.platforms if 20 < q.y - q2.y < 150 and not q2.broken]
         prey = [m for m in sc.monsters if q.y - 260 < m.y < q.y
                 and abs(wrap_dx(m.x - xt, W)) < q.w / 2 + m.w / 2] if self.hunting else []
@@ -341,8 +361,10 @@ class Planner:
         self.hunting = self._stuck_level(p, W) >= 3 and any(m.y < p.y for m in sc.monsters)
         self.bounces = [b for b in self.bounces if t - b[0] < 8.0]
         best = self._choose_target(sc, p)
+        self._plan_dx = None
         if best is not None:
             _, q, xt, dx, tl = best
+            self._plan_dx = dx
             self.target_world = (q.x, q.y - self.world)
             plan.target = (xt % W, q.y)
             plan.note = f"target{' BONUS' if q.bonus else ''}{' broken' if q.broken else ''} t={tl:.2f}"
@@ -365,7 +387,8 @@ class Planner:
                 if abs(dx) > self.deadband:
                     plan.move = "right" if dx > 0 else "left"
                 plan.target = (q.x, q.y)
-        plan.move, overridden = self._safe_move(sc, p, plan.move)
+        travel = abs(self._plan_dx) if self._plan_dx is not None else None
+        plan.move, overridden = self._safe_move(sc, p, plan.move, travel)
         if overridden:
             plan.note += " SAFE"
         if plan.move != self.held:
