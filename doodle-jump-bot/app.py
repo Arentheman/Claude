@@ -5,6 +5,7 @@ import subprocess
 import sys
 import time
 import tkinter as tk
+import traceback
 from tkinter import ttk
 
 import engine  # первым: включает DPI-awareness до создания окна
@@ -17,61 +18,109 @@ from pynput import keyboard
 from vision import draw_debug
 
 PREVIEW_H = 470
+LOG_PATH = os.path.join(os.path.dirname(engine.config_path()), "log.txt")
+
+
+def write_log(text):
+    """Журнал в файл — чтобы можно было прислать, если что-то пошло не так."""
+    try:
+        with open(LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + text.rstrip() + "\n")
+    except OSError:
+        pass
 APP_TITLE = "Doodle Jump бот"
 
 
 class RegionPicker:
-    """Полупрозрачный снимок всего экрана: игрок обводит игру мышкой."""
+    """Затемнённый снимок всего экрана: игрок обводит игру мышкой
+    (перетаскиванием или двумя кликами по углам)."""
 
     def __init__(self, root, on_done):
         self.on_done = on_done
+        self.done = False
         with mss.mss() as sct:
             mon = sct.monitors[0]            # весь рабочий стол (все мониторы)
             shot = sct.grab(mon)
-        self.left, self.top = mon["left"], mon["top"]
+        self.mon = mon
         img = Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
         img = ImageEnhance.Brightness(img).enhance(0.55)
         self.photo = ImageTk.PhotoImage(img)
 
         self.win = tk.Toplevel(root)
         self.win.overrideredirect(True)
-        self.win.geometry(f"{mon['width']}x{mon['height']}+{mon['left']}+{mon['top']}")
+        self.win.geometry(f"{mon['width']}x{mon['height']}{mon['left']:+d}{mon['top']:+d}")
         self.win.attributes("-topmost", True)
-        self.cv = tk.Canvas(self.win, highlightthickness=0, cursor="crosshair")
+        self.cv = tk.Canvas(self.win, highlightthickness=0, cursor="crosshair",
+                            width=mon["width"], height=mon["height"])
         self.cv.pack(fill="both", expand=True)
         self.cv.create_image(0, 0, image=self.photo, anchor="nw")
-        self.cv.create_text(
+        self.hint = self.cv.create_text(
             mon["width"] // 2, 40, fill="white", font=("Segoe UI", 18, "bold"),
-            text="Обведи мышкой игровое поле (без заголовка окна Telegram).  Esc — отмена")
+            text="Обведи мышкой игровое поле (или кликни в левый верхний, потом в правый нижний угол).  Esc — отмена")
+        self.size_txt = self.cv.create_text(0, 0, fill="#3ddc84", font=("Segoe UI", 14, "bold"), anchor="nw")
         self.rect = None
-        self.start = None
+        self.start = None        # первый угол (в экранных координатах)
         self.cv.bind("<ButtonPress-1>", self._press)
         self.cv.bind("<B1-Motion>", self._drag)
         self.cv.bind("<ButtonRelease-1>", self._release)
+        self.cv.bind("<Motion>", self._move)
         self.win.bind("<Escape>", lambda e: self._finish(None))
+        self.win.lift()
         self.win.focus_force()
 
+    # Работаем в экранных координатах (x_root/y_root): они не зависят от того,
+    # куда Windows на самом деле поставила окно-затемнение.
+    def _to_canvas(self, xr, yr):
+        return self.cv.canvasx(xr - self.cv.winfo_rootx()), self.cv.canvasy(yr - self.cv.winfo_rooty())
+
+    def _draw(self, xr, yr):
+        if self.start is None:
+            return
+        x0, y0 = self._to_canvas(*self.start)
+        x1, y1 = self._to_canvas(xr, yr)
+        if self.rect is None:
+            self.rect = self.cv.create_rectangle(x0, y0, x1, y1, outline="#3ddc84", width=3)
+        else:
+            self.cv.coords(self.rect, x0, y0, x1, y1)
+        w, h = abs(xr - self.start[0]), abs(yr - self.start[1])
+        self.cv.coords(self.size_txt, max(x0, x1) + 8, max(y0, y1) + 8)
+        self.cv.itemconfigure(self.size_txt, text=f"{w}×{h}")
+
     def _press(self, e):
-        self.start = (e.x, e.y)
-        if self.rect:
-            self.cv.delete(self.rect)
-        self.rect = self.cv.create_rectangle(e.x, e.y, e.x, e.y, outline="#3ddc84", width=3)
+        if self.start is None:
+            self.start = (e.x_root, e.y_root)
+            self.dragging = False
+            self._draw(e.x_root, e.y_root)
+            self.cv.itemconfigure(self.hint, text="Теперь правый нижний угол игры (отпусти кнопку или кликни).  Esc — отмена")
 
     def _drag(self, e):
-        if self.start:
-            self.cv.coords(self.rect, self.start[0], self.start[1], e.x, e.y)
+        self.dragging = True
+        self._draw(e.x_root, e.y_root)
+
+    def _move(self, e):
+        self._draw(e.x_root, e.y_root)
 
     def _release(self, e):
-        if not self.start:
+        if self.start is None:
             return
         x0, y0 = self.start
-        x1, y1 = e.x, e.y
+        x1, y1 = e.x_root, e.y_root
         if abs(x1 - x0) < 60 or abs(y1 - y0) < 100:
-            return                                  # случайный клик — ждём нормальную рамку
-        self._finish({"left": self.left + min(x0, x1), "top": self.top + min(y0, y1),
+            # Короткий клик — это первый угол; ждём второй клик.
+            if getattr(self, "second_click", False):
+                self.cv.itemconfigure(self.hint, text="Слишком маленькая область. Попробуй ещё раз.  Esc — отмена")
+                self.start = None
+                self.second_click = False
+                return
+            self.second_click = True
+            return
+        self._finish({"left": min(x0, x1), "top": min(y0, y1),
                       "width": abs(x1 - x0), "height": abs(y1 - y0)})
 
     def _finish(self, region):
+        if self.done:
+            return
+        self.done = True
         self.win.destroy()
         self.on_done(region)
 
@@ -94,6 +143,8 @@ class App:
         self._update_region_label()
         self._start_hotkeys()
         self.root.protocol("WM_DELETE_WINDOW", self._quit)
+        # Ошибки в обработчиках кнопок иначе пропадают молча (у .exe нет консоли).
+        self.root.report_callback_exception = self._on_tk_error
         self.root.after(150, self._tick)
 
     # --- интерфейс ------------------------------------------------------
@@ -106,7 +157,8 @@ class App:
 
         f1 = ttk.LabelFrame(left, text="1. Где игра")
         f1.pack(fill="x", **pad)
-        ttk.Button(f1, text="Выбрать область игры…", command=self._pick_region).pack(fill="x", padx=8, pady=6)
+        ttk.Button(f1, text="Выбрать область игры…", command=self._pick_region).pack(fill="x", padx=8, pady=(6, 2))
+        ttk.Button(f1, text="Запасной способ: углы по F7", command=self._pick_by_f7).pack(fill="x", padx=8, pady=(0, 6))
         self.region_lbl = ttk.Label(f1, text="", wraplength=260)
         self.region_lbl.pack(anchor="w", padx=8, pady=(0, 6))
         ttk.Button(f1, text="Проверить распознавание", command=self._check).pack(fill="x", padx=8, pady=(0, 8))
@@ -167,6 +219,7 @@ class App:
         self.preview.grid(row=0, column=1, sticky="ns", padx=(0, 8), pady=8)
 
     def _add_log(self, text):
+        write_log(text)
         self.log.configure(state="normal")
         self.log.insert("end", time.strftime("%H:%M:%S ") + text + "\n")
         self.log.see("end")
@@ -183,11 +236,47 @@ class App:
     def _pick_region(self):
         self.engine.pause()
         self.root.withdraw()
-        self.root.after(250, lambda: RegionPicker(self.root, self._region_done))
+        self.root.after(250, self._open_picker)
+
+    def _open_picker(self):
+        try:
+            self.picker = RegionPicker(self.root, self._region_done)
+        except Exception as e:
+            self.root.deiconify()
+            self._add_log(f"Не удалось открыть выбор области: {e!r}")
+            write_log(traceback.format_exc())
+
+    def _pick_by_f7(self):
+        """Без затемнения экрана: курсор на угол игры + F7, затем второй угол + F7."""
+        self.engine.pause()
+        self.f7_points = []
+        self._add_log("Наведи курсор на ЛЕВЫЙ ВЕРХНИЙ угол игры и нажми F7.")
+
+    def _f7_pressed(self):
+        pts = getattr(self, "f7_points", None)
+        if pts is None:
+            return
+        now = time.monotonic()
+        if now - self._last_f7 < 0.4:      # одно нажатие могло прийти дважды
+            return
+        self._last_f7 = now
+        pts.append(tuple(int(v) for v in engine.mouse.Controller().position))
+        if len(pts) == 1:
+            self._add_log(f"Угол 1: {pts[0]}. Теперь ПРАВЫЙ НИЖНИЙ угол игры и F7.")
+            return
+        self.f7_points = None
+        (x0, y0), (x1, y1) = pts
+        if abs(x1 - x0) < 60 or abs(y1 - y0) < 100:
+            self._add_log("Слишком маленькая область — попробуй ещё раз.")
+            return
+        self._region_done({"left": min(x0, x1), "top": min(y0, y1),
+                           "width": abs(x1 - x0), "height": abs(y1 - y0)})
 
     def _region_done(self, region):
         self.root.deiconify()
+        self.root.lift()
         if region:
+            self._add_log(f"Выбрано {region['width']}×{region['height']} в точке ({region['left']}, {region['top']})")
             self.cfg["region"] = region
             engine.save_config(self.cfg)
             self._update_region_label()
@@ -272,12 +361,16 @@ class App:
         def on_press(k):
             if k == keyboard.Key.f8:
                 self.root.after(0, self._hotkey_toggle)
+            elif k == keyboard.Key.f7:
+                self.root.after(0, self._f7_pressed)
 
         self.hotkeys = keyboard.Listener(on_press=on_press)
         self.hotkeys.daemon = True
         self.hotkeys.start()
         # Запасной вариант, если глобальный перехват не сработал.
         self.root.bind_all("<F8>", lambda e: self._hotkey_toggle())
+        self.root.bind_all("<F7>", lambda e: self._f7_pressed())
+        self._last_f7 = 0.0
         self._last_hotkey = 0.0
 
     def _hotkey_toggle(self):
@@ -310,6 +403,19 @@ class App:
             self.start_btn.configure(text="▶  Старт  (F8)", bg="#3ddc84", activebackground="#2fbf70")
             self.state_lbl.configure(text="Остановлен")
         self.root.after(150, self._tick)
+
+    def _on_tk_error(self, exc, val, tb):
+        text = "".join(traceback.format_exception(exc, val, tb))
+        write_log(text)
+        try:
+            picker = getattr(self, "picker", None)
+            if picker is not None and not picker.done:
+                picker.done = True
+                picker.win.destroy()        # не оставляем затемнение на экране
+            self.root.deiconify()
+            self._add_log(f"Ошибка: {val!r} (подробности в {LOG_PATH})")
+        except Exception:
+            pass
 
     def _record_saved(self, path):
         """Показываем готовый zip в проводнике."""
