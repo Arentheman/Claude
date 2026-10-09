@@ -8,11 +8,10 @@ import argparse
 import os
 import time
 
-import cv2
 
 from engine import HERE, BotEngine, check_region, load_config, save_config
 from pynput import keyboard, mouse
-from vision import draw_debug
+from vision import draw_debug, imwrite_any
 
 
 def calibrate(cfg):
@@ -45,7 +44,7 @@ def calibrate(cfg):
 
     frame, sc = check_region(cfg["region"])
     out = os.path.join(HERE, "calibration_check.png")
-    cv2.imwrite(out, draw_debug(frame, sc))
+    imwrite_any(out, draw_debug(frame, sc))
     print(f"Проверка: платформ {len(sc.platforms)}, герой {'найден' if sc.player else 'НЕ найден'}, "
           f"монстров {len(sc.monsters)}, дыр {len(sc.holes)}")
     print(f"Картинка с разметкой: {out}")

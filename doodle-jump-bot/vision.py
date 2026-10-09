@@ -87,13 +87,26 @@ PLAYER_MATCH_MIN = 0.5
 MASK_ERODE = 9
 
 
+def imwrite_any(path, img):
+    """cv2.imwrite, который работает и с путями на кириллице (Windows)."""
+    ok, buf = cv2.imencode(os.path.splitext(path)[1] or ".png", img)
+    if ok:
+        buf.tofile(path)
+    return ok
+
+
 def load_player_templates(scale=SCALE):
     """Шаблоны героя (позы «падает» и «прыгает») + зеркальные копии."""
     out = []
     for name in sorted(os.listdir(TEMPLATE_DIR)):
         if not name.startswith("player_"):
             continue
-        rgba = cv2.imread(os.path.join(TEMPLATE_DIR, name), cv2.IMREAD_UNCHANGED)
+        # Не cv2.imread: на Windows он не открывает пути с кириллицей
+        # (например, C:\Users\Имя\...) и молча возвращает None.
+        path = os.path.join(TEMPLATE_DIR, name)
+        rgba = cv2.imdecode(np.fromfile(path, np.uint8), cv2.IMREAD_UNCHANGED)
+        if rgba is None or rgba.ndim != 3 or rgba.shape[2] != 4:
+            raise RuntimeError(f"не удалось прочитать шаблон героя: {path}")
         g = cv2.cvtColor(rgba[..., :3], cv2.COLOR_BGR2GRAY)
         # Маску сжимаем: по краю спрайта в шаблон попала кайма дневного фона,
         # из-за которой ночью (на тёмном фоне) герой переставал узнаваться.

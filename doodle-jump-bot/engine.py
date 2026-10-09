@@ -27,7 +27,7 @@ from pynput import keyboard, mouse
 
 from planner import Physics, Planner
 from recorder import Recorder
-from vision import CANON_W, Detector, draw_debug
+from vision import CANON_W, Detector, draw_debug, imwrite_any
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -284,7 +284,7 @@ class BotEngine:
                 last_preview = t
             if self.debug_dir and t - last_debug > 0.5:
                 os.makedirs(self.debug_dir, exist_ok=True)
-                cv2.imwrite(os.path.join(self.debug_dir, f"{int(t * 1000)}.jpg"), draw_debug(frame, sc, plan))
+                imwrite_any(os.path.join(self.debug_dir, f"{int(t * 1000)}.jpg"), draw_debug(frame, sc, plan))
                 last_debug = t
 
             frames += 1
