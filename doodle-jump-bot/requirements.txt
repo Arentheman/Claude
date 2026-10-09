@@ -1,4 +1,5 @@
 mss
-opencv-python
+opencv-python-headless
 numpy
 pynput
+pillow

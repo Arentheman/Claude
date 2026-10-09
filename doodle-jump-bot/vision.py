@@ -5,6 +5,7 @@
 от реального размера окна Telegram.
 """
 import os
+import sys
 from dataclasses import dataclass, field
 
 import cv2
@@ -80,7 +81,8 @@ def to_canon(frame_bgr):
     return cv2.resize(frame_bgr, (CANON_W, nh), interpolation=cv2.INTER_AREA)
 
 
-TEMPLATE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
+# В собранном .exe данные лежат во временной папке распаковки (sys._MEIPASS).
+TEMPLATE_DIR = os.path.join(getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__))), "templates")
 PLAYER_MATCH_MIN = 0.5
 
 
