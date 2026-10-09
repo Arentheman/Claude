@@ -1,0 +1,5 @@
+mss
+opencv-python-headless
+numpy
+pynput
+pillow
