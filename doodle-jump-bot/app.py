@@ -67,6 +67,29 @@ class RegionPicker:
         self.win.bind("<Escape>", lambda e: self._finish(None))
         self.win.lift()
         self.win.focus_force()
+        self.win.after(50, self._force_top)
+        # Если затемнение оказалось невидимым (под другим окном) — не держим
+        # пользователя: через минуту закрываем и возвращаем окно бота.
+        self.win.after(60000, lambda: self._finish(None))
+        write_log(f"выбор области: мониторы {mon}, окно затемнения {self.win.winfo_geometry()}")
+
+    def _force_top(self):
+        """Поднимаем затемнение над всеми окнами, в том числе над окнами,
+        закреплёнными «поверх всех» (например, окно мини-приложения)."""
+        try:
+            self.win.attributes("-topmost", True)
+            self.win.lift()
+            if sys.platform == "win32":
+                import ctypes
+                hwnd = ctypes.windll.user32.GetParent(self.win.winfo_id()) or self.win.winfo_id()
+                HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW = -1, 2, 1, 0x40
+                ctypes.windll.user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                                                  SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+                ctypes.windll.user32.SetForegroundWindow(hwnd)
+            self.win.focus_force()
+            write_log(f"затемнение показано: {self.win.winfo_geometry()}, видно={self.win.winfo_viewable()}")
+        except Exception as e:
+            write_log(f"затемнение: не удалось поднять поверх: {e!r}")
 
     # Работаем в экранных координатах (x_root/y_root): они не зависят от того,
     # куда Windows на самом деле поставила окно-затемнение.
@@ -87,6 +110,7 @@ class RegionPicker:
         self.cv.itemconfigure(self.size_txt, text=f"{w}×{h}")
 
     def _press(self, e):
+        write_log(f"затемнение: нажатие {e.x_root},{e.y_root}")
         if self.start is None:
             self.start = (e.x_root, e.y_root)
             self.dragging = False
@@ -101,6 +125,7 @@ class RegionPicker:
         self._draw(e.x_root, e.y_root)
 
     def _release(self, e):
+        write_log(f"затемнение: отпускание {e.x_root},{e.y_root}")
         if self.start is None:
             return
         x0, y0 = self.start
@@ -158,7 +183,7 @@ class App:
         f1 = ttk.LabelFrame(left, text="1. Где игра")
         f1.pack(fill="x", **pad)
         ttk.Button(f1, text="Выбрать область игры…", command=self._pick_region).pack(fill="x", padx=8, pady=(6, 2))
-        ttk.Button(f1, text="Запасной способ: углы по F7", command=self._pick_by_f7).pack(fill="x", padx=8, pady=(0, 6))
+        ttk.Button(f1, text="Запасной способ: два клика по игре", command=self._pick_by_clicks).pack(fill="x", padx=8, pady=(0, 6))
         self.region_lbl = ttk.Label(f1, text="", wraplength=260)
         self.region_lbl.pack(anchor="w", padx=8, pady=(0, 6))
         ttk.Button(f1, text="Проверить распознавание", command=self._check).pack(fill="x", padx=8, pady=(0, 8))
@@ -246,28 +271,47 @@ class App:
             self._add_log(f"Не удалось открыть выбор области: {e!r}")
             write_log(traceback.format_exc())
 
-    def _pick_by_f7(self):
-        """Без затемнения экрана: курсор на угол игры + F7, затем второй угол + F7."""
+    def _pick_by_clicks(self):
+        """Без затемнения и без клавиш: ловим два клика мышкой прямо по игре
+        (левый верхний и правый нижний угол). Клики уходят и в игру —
+        там это просто бросок оружия, ничего страшного."""
         self.engine.pause()
-        self.f7_points = []
-        self._add_log("Наведи курсор на ЛЕВЫЙ ВЕРХНИЙ угол игры и нажми F7.")
+        if getattr(self, "click_listener", None) is not None:
+            self.click_listener.stop()
+        self.click_points = []
+        self._add_log("Кликни по ЛЕВОМУ ВЕРХНЕМУ углу игрового поля.")
 
-    def _f7_pressed(self):
-        pts = getattr(self, "f7_points", None)
+        def on_click(x, y, button, pressed):
+            if pressed and button == engine.mouse.Button.left:
+                self.root.after(0, self._game_click, int(x), int(y))
+
+        def start():
+            self.click_listener = engine.mouse.Listener(on_click=on_click)
+            self.click_listener.daemon = True
+            self.click_listener.start()
+
+        # Чуть ждём, чтобы не поймать клик по самой кнопке.
+        self.root.after(400, start)
+
+    def _game_click(self, x, y):
+        pts = getattr(self, "click_points", None)
         if pts is None:
             return
-        now = time.monotonic()
-        if now - self._last_f7 < 0.4:      # одно нажатие могло прийти дважды
+        # Клики по окну бота не считаем.
+        rx, ry = self.root.winfo_rootx(), self.root.winfo_rooty()
+        if rx <= x < rx + self.root.winfo_width() and ry <= y < ry + self.root.winfo_height():
             return
-        self._last_f7 = now
-        pts.append(tuple(int(v) for v in engine.mouse.Controller().position))
+        pts.append((x, y))
+        write_log(f"клик для области: {(x, y)}")
         if len(pts) == 1:
-            self._add_log(f"Угол 1: {pts[0]}. Теперь ПРАВЫЙ НИЖНИЙ угол игры и F7.")
+            self._add_log(f"Угол 1: {pts[0]}. Теперь кликни по ПРАВОМУ НИЖНЕМУ углу игры.")
             return
-        self.f7_points = None
+        self.click_points = None
+        self.click_listener.stop()
+        self.click_listener = None
         (x0, y0), (x1, y1) = pts
         if abs(x1 - x0) < 60 or abs(y1 - y0) < 100:
-            self._add_log("Слишком маленькая область — попробуй ещё раз.")
+            self._add_log("Слишком маленькая область — нажми кнопку и попробуй ещё раз.")
             return
         self._region_done({"left": min(x0, x1), "top": min(y0, y1),
                            "width": abs(x1 - x0), "height": abs(y1 - y0)})
@@ -361,16 +405,12 @@ class App:
         def on_press(k):
             if k == keyboard.Key.f8:
                 self.root.after(0, self._hotkey_toggle)
-            elif k == keyboard.Key.f7:
-                self.root.after(0, self._f7_pressed)
 
         self.hotkeys = keyboard.Listener(on_press=on_press)
         self.hotkeys.daemon = True
         self.hotkeys.start()
         # Запасной вариант, если глобальный перехват не сработал.
         self.root.bind_all("<F8>", lambda e: self._hotkey_toggle())
-        self.root.bind_all("<F7>", lambda e: self._f7_pressed())
-        self._last_f7 = 0.0
         self._last_hotkey = 0.0
 
     def _hotkey_toggle(self):
