@@ -26,6 +26,7 @@ import numpy as np
 from pynput import keyboard, mouse
 
 from planner import Physics, Planner
+from recorder import Recorder
 from vision import CANON_W, Detector, draw_debug
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -144,8 +145,12 @@ class BotEngine:
     """Игровой цикл в отдельном потоке. Управление: start()/pause()/toggle()/stop().
     Для окна: stats (словарь с цифрами) и last_preview (кадр с разметкой)."""
 
-    def __init__(self, cfg, log=print, want_preview=lambda: False, debug_dir=None):
+    def __init__(self, cfg, log=print, want_preview=lambda: False, debug_dir=None,
+                 want_record=lambda: False, on_record_saved=None):
         self.cfg = cfg
+        self.want_record = want_record
+        self.on_record_saved = on_record_saved
+        self.recorder = None
         self.log = log
         self.want_preview = want_preview
         self.debug_dir = debug_dir
@@ -185,7 +190,8 @@ class BotEngine:
         self.running = False
         self._quit = True
         if self._thread is not None:
-            self._thread.join(timeout=2)
+            # Если идёт запись — даём время дописать и упаковать её.
+            self._thread.join(timeout=60 if self.recorder is not None else 2)
 
     # --- цикл -----------------------------------------------------------
     def _loop(self):
@@ -198,6 +204,21 @@ class BotEngine:
         finally:
             if self._ctl is not None:
                 self._ctl.release_all()
+            self._finish_recording()
+
+    def _finish_recording(self):
+        rec, self.recorder = self.recorder, None
+        if rec is None:
+            return
+        self.log("Запись: сохраняю…")
+        try:
+            path = rec.stop()
+        except Exception as e:
+            self.log(f"Запись: не удалось сохранить: {e!r}")
+            return
+        self.log(f"Запись сохранена: {path}")
+        if self.on_record_saved:
+            self.on_record_saved(path)
 
     def _run(self, sct):
         was_running = False
@@ -211,6 +232,7 @@ class BotEngine:
                     ctl.release_all()
                     was_running = False
                     self.log("⏸ Пауза")
+                    self._finish_recording()
                 time.sleep(0.05)
                 continue
             if not was_running:
@@ -225,6 +247,12 @@ class BotEngine:
                 ctl = self._ctl = Controls(cfg, region)
                 was_running = True
                 self.log("▶ Бот играет")
+                if self.want_record():
+                    try:
+                        self.recorder = Recorder(log=self.log)
+                        self.log(f"Идёт запись в {self.recorder.dir}")
+                    except Exception as e:
+                        self.log(f"Запись: не удалось начать: {e!r}")
 
             frame = grab(sct, region)
             sc = det.detect(frame, t)
@@ -247,6 +275,9 @@ class BotEngine:
                 ctl.move(plan.move)
                 if plan.fire:
                     ctl.fire(plan.fire_at)
+
+            if self.recorder is not None:
+                self.recorder.feed(t, frame, sc, plan, planner if plan is not None else None)
 
             if self.want_preview() and t - last_preview > 0.15:
                 self.last_preview = draw_debug(frame, sc, plan)

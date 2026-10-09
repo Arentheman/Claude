@@ -1,11 +1,14 @@
 """Окно бота для Doodle Jump (Telegram mini-app). Из него собирается DoodleBot.exe."""
+import os
 import queue
+import subprocess
 import sys
 import time
 import tkinter as tk
 from tkinter import ttk
 
 import engine  # первым: включает DPI-awareness до создания окна
+import recorder
 import cv2
 import mss
 from PIL import Image, ImageEnhance, ImageTk
@@ -81,8 +84,11 @@ class App:
         self.root.resizable(False, False)
         self.logq = queue.Queue()
         self.show_preview = tk.BooleanVar(value=True)
+        self.record = tk.BooleanVar(value=False)
         self.engine = engine.BotEngine(self.cfg, log=self.logq.put,
-                                       want_preview=self.show_preview.get)
+                                       want_preview=self.show_preview.get,
+                                       want_record=self.record.get,
+                                       on_record_saved=lambda p: self.root.after(0, self._record_saved, p))
         self.preview_img = None
         self._build()
         self._update_region_label()
@@ -115,6 +121,15 @@ class App:
         self.state_lbl.pack(anchor="w", padx=8)
         self.stats_lbl = ttk.Label(f2, text="", wraplength=260)
         self.stats_lbl.pack(anchor="w", padx=8, pady=(0, 8))
+
+        fr = ttk.LabelFrame(left, text="Запись для разбора ошибок")
+        fr.pack(fill="x", **pad)
+        ttk.Checkbutton(fr, text="Записывать игру бота", variable=self.record).pack(anchor="w", padx=8, pady=(6, 0))
+        ttk.Label(fr, text="Запись идёт от «Старт» до «Пауза». После паузы\n"
+                           "получится zip-файл — его и присылай.",
+                  foreground="#666").pack(anchor="w", padx=8)
+        ttk.Button(fr, text="Открыть папку с записями", command=self._open_records).pack(
+            fill="x", padx=8, pady=(4, 8))
 
         f3 = ttk.LabelFrame(left, text="Настройки")
         f3.pack(fill="x", **pad)
@@ -296,7 +311,23 @@ class App:
             self.state_lbl.configure(text="Остановлен")
         self.root.after(150, self._tick)
 
+    def _record_saved(self, path):
+        """Показываем готовый zip в проводнике."""
+        if sys.platform == "win32" and os.path.exists(path):
+            subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
+
+    def _open_records(self):
+        folder = recorder.default_root()
+        os.makedirs(folder, exist_ok=True)
+        if sys.platform == "win32":
+            os.startfile(folder)
+        else:
+            self._add_log(folder)
+
     def _quit(self):
+        if self.engine.recorder is not None:
+            self.state_lbl.configure(text="Сохраняю запись…")
+            self.root.update()
         self.engine.stop()
         try:
             self.hotkeys.stop()
