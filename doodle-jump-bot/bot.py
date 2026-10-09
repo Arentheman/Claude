@@ -130,7 +130,8 @@ class Controls:
         self.held = None
 
     def to_screen(self, x, y):
-        return (self.region["left"] + x * self.scale, self.region["top"] + y * self.scale)
+        return (int(round(self.region["left"] + float(x) * self.scale)),
+                int(round(self.region["top"] + float(y) * self.scale)))
 
     def move(self, direction):
         if direction == self.held:
@@ -199,60 +200,65 @@ def run(cfg, show=False, save_debug=False):
     last_restart = 0.0
     last_debug = 0.0
     was_running = False
-    with mss.mss() as sct:
-        while not state["quit"]:
-            t = time.perf_counter()
-            if not state["running"]:
-                if was_running:
-                    ctl.release_all()
-                    was_running = False
-                time.sleep(0.05)
-                continue
-            if not was_running:
-                det.reset()
-                planner.reset()
-                was_running = True
-
-            frame = grab(sct, region)
-            sc = det.detect(frame, t)
-
-            if sc.game_over is not None:
-                ctl.release_all()
-                if cfg.get("restart", True) and t - last_restart > 2.0:
-                    print(f"Падение. Перезапуск... (прыжок {phys.jump_speed:.0f}, бег {phys.run_speed:.0f})")
-                    time.sleep(0.8)
-                    ctl.click(*sc.game_over)
-                    last_restart = time.perf_counter()
+    try:
+        with mss.mss() as sct:
+            while not state["quit"]:
+                t = time.perf_counter()
+                if not state["running"]:
+                    if was_running:
+                        ctl.release_all()
+                        was_running = False
+                    time.sleep(0.05)
+                    continue
+                if not was_running:
                     det.reset()
                     planner.reset()
-                plan = None
-            else:
-                plan = planner.step(sc, t)
-                if planner.lost_frames > 30:
-                    planner.reset()
-                ctl.move(plan.move)
-                if plan.fire:
-                    ctl.fire(plan.fire_at)
+                    was_running = True
 
-            if show or (save_debug and t - last_debug > 0.5):
-                dbg = draw_debug(frame, sc, plan)
-                if show:
-                    cv2.imshow("doodle bot", cv2.resize(dbg, None, fx=0.6, fy=0.6))
-                    cv2.waitKey(1)
-                if save_debug and t - last_debug > 0.5:
-                    cv2.imwrite(os.path.join(debug_dir, f"{int(t * 1000)}.jpg"), dbg)
-                    last_debug = t
+                frame = grab(sct, region)
+                sc = det.detect(frame, t)
 
-            frames += 1
-            if t - fps_t0 > 5:
-                print(f"{frames / (t - fps_t0):.0f} к/с; {plan.note if plan else ''}")
-                frames, fps_t0 = 0, t
-            spent = time.perf_counter() - t
-            if spent < min_dt:
-                time.sleep(min_dt - spent)
+                if sc.game_over is not None:
+                    ctl.release_all()
+                    if cfg.get("restart", True) and t - last_restart > 2.0:
+                        print(f"Падение. Перезапуск... (прыжок {phys.jump_speed:.0f}, бег {phys.run_speed:.0f})")
+                        time.sleep(0.8)
+                        ctl.click(*sc.game_over)
+                        last_restart = time.perf_counter()
+                        det.reset()
+                        planner.reset()
+                    plan = None
+                else:
+                    plan = planner.step(sc, t)
+                    if planner.lost_frames > 30:
+                        planner.reset()
+                    ctl.move(plan.move)
+                    if plan.fire:
+                        ctl.fire(plan.fire_at)
 
-    ctl.release_all()
-    listener.stop()
+                if show or (save_debug and t - last_debug > 0.5):
+                    dbg = draw_debug(frame, sc, plan)
+                    if show:
+                        cv2.imshow("doodle bot", cv2.resize(dbg, None, fx=0.6, fy=0.6))
+                        cv2.waitKey(1)
+                    if save_debug and t - last_debug > 0.5:
+                        cv2.imwrite(os.path.join(debug_dir, f"{int(t * 1000)}.jpg"), dbg)
+                        last_debug = t
+
+                frames += 1
+                if t - fps_t0 > 5:
+                    print(f"{frames / (t - fps_t0):.0f} к/с; {plan.note if plan else ''}")
+                    frames, fps_t0 = 0, t
+                spent = time.perf_counter() - t
+                if spent < min_dt:
+                    time.sleep(min_dt - spent)
+
+    except KeyboardInterrupt:
+        pass
+    finally:
+        # Никогда не оставляем A/D зажатыми.
+        ctl.release_all()
+        listener.stop()
     print("Выход.")
 
 

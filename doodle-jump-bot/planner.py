@@ -39,7 +39,7 @@ class Planner:
         cfg = cfg or {}
         self.deadband = cfg.get("deadband", 7.0)
         self.fire_cooldown = cfg.get("fire_cooldown", 0.25)
-        self.fire_dx = cfg.get("fire_dx", 12.0)
+        self.fire_dx = cfg.get("fire_dx", 4.0)
         self.aim_fire = cfg.get("aim_fire", False)
         self.adapt = cfg.get("adapt_physics", True)
         self.apex_margin = cfg.get("apex_margin", 10.0)
@@ -62,6 +62,8 @@ class Planner:
         self.held = None
         self.held_since = 0.0
         self.bounces = []         # (t, x, мировая y) недавних отскоков
+        self.hunting = False
+        self.drift = 0.0
         self.cmds = []            # история команд (t, направление) за последние доли секунды
 
     # ------------------------------------------------------------------
@@ -81,7 +83,13 @@ class Planner:
                 # Резкий рывок вверх = отскок (платформа, монстр, пружина).
                 # Обычный отскок даёт известную скорость, пружина — больше.
                 self.vy = min(-self.ph.jump_speed, meas)
-                self.bounce_wy = self.prev_wy
+                # Точка отскока — верх платформы под ногами (если нашли её);
+                # по позиции из прошлого кадра высота прыжка занижается.
+                self.bounce_wy = None
+                for q in sc.platforms:
+                    if abs(wrap_dx(q.x - p.x, sc.width)) < q.w / 2 + 12 and -45 < q.y - (p.y + self.ph.feet) < 45:
+                        self.bounce_wy = q.y - self.ph.feet - self.world
+                        break
                 self.apex_wy = None
                 self.bounces.append((t, p.x, self.prev_wy))
             else:
@@ -147,6 +155,8 @@ class Planner:
                 if wrap_dx(x - h.x, W) ** 2 + (y - h.y) ** 2 < r * r:
                     return True
             for m in sc.monsters:
+                if self._will_shoot(m, p):
+                    continue
                 falling = vy + ph.gravity * t > 0
                 # Прыжок сверху на монстра безопасен (он работает как платформа).
                 if falling and y + ph.feet < m.y:
@@ -155,11 +165,83 @@ class Planner:
                     return True
         return False
 
+    def _clearance(self, sc: Scene, p, move, horizon=0.75):
+        """Короткая симуляция (с отскоками от платформ) при заданной команде.
+        Возвращает минимальный запас до опасности: < 0 — столкновение."""
+        ph = self.ph
+        W = sc.width
+        x, y, vy = p.x + self.drift, p.y, self.vy
+        dirv = {"left": -1, "right": 1}.get(move, 0)
+        dt = 0.02
+        best = 1e9
+        t = 0.0
+        while t < horizon:
+            if t >= ph.latency:
+                x = (x + dirv * ph.run_speed * dt) % W
+            oy = y
+            vy += ph.gravity * dt
+            y += vy * dt
+            if vy > 0:
+                for q in sc.platforms:
+                    if oy + ph.feet <= q.y <= y + ph.feet and abs(wrap_dx(x - q.x, W)) < q.w / 2 + 10:
+                        vy, y = -ph.jump_speed, q.y - ph.feet
+                        break
+            for h in sc.holes:
+                r = max(h.w, h.h) * self.hole_k + 22
+                d = math.hypot(wrap_dx(x - h.x, W), y - h.y) - r
+                best = min(best, d)
+            for m in sc.monsters:
+                if vy > 0 and y + ph.feet < m.y:
+                    continue                      # прыжок сверху — безопасно
+                if self._will_shoot(m, p):
+                    continue
+                d = max(abs(wrap_dx(x - m.x, W)) - (m.w / 2 + 16), abs(y - m.y) - (m.h / 2 + 22))
+                best = min(best, d)
+            t += dt
+        return best
+
+    def _safe_move(self, sc: Scene, p, move):
+        """Если запланированное движение ведёт в монстра/дыру — берём безопасное."""
+        if not sc.holes and not sc.monsters:
+            return move, False
+        options = [move] + [m for m in (None, "left", "right") if m != move]
+        scores = [(self._clearance(sc, p, m), m) for m in options]
+        if scores[0][0] > 4:
+            return move, False
+        safest = max(scores, key=lambda c: c[0])
+        return safest[1], safest[1] != move
+
+    def _will_shoot(self, m, p):
+        """Режим «охоты» (застряли): монстра, висящего над нами, мы собьём
+        выстрелом раньше, чем долетим, поэтому не считаем его препятствием."""
+        return self.hunting and m.y < p.y - 90
+
+    def _dx_keep_dir(self, dx, W):
+        """Цель почти напротив (через край экрана примерно так же далеко) —
+        не меняем направление туда-сюда, продолжаем в ту же сторону."""
+        if self.held and abs(dx) > W / 2 - 60:
+            alt = dx - math.copysign(W, dx)
+            if (alt > 0) == (self.held == "right") and abs(alt) < W / 2 + 60:
+                return alt
+        return dx
+
+    def _stuck_level(self, p, W):
+        if not self.bounces:
+            return 0
+        _, bx, by = self.bounces[-1]
+        return sum(1 for _, x, y in self.bounces
+                   if abs(wrap_dx(x - bx, W)) < 60 and abs(y - by) < 40)
+
     def _choose_target(self, sc: Scene, p):
         ph = self.ph
         W = sc.width
         feet = p.y + ph.feet
         vy = self.vy
+        # Застряли (много отскоков на одном месте) — рискуем: пробуем прыжки
+        # на пределе досягаемости. Промах обычно = приземление ниже, не смерть.
+        stuck = self._stuck_level(p, W)
+        apex_margin = 0.0 if stuck >= 3 else self.apex_margin
+        x_margin = -12.0 if stuck >= 3 else self.x_margin
         best = None
         for q in sc.platforms:
             dy = q.y - feet
@@ -167,7 +249,7 @@ class Planner:
                 continue
             # Нужен запас по высоте: платформа, до которой еле дотягиваемся,
             # — частая причина промаха.
-            if dy < 0 and vy < 0 and vy * vy / (2 * ph.gravity) < -dy + self.apex_margin:
+            if dy < 0 and vy < 0 and vy * vy / (2 * ph.gravity) < -dy + apex_margin:
                 continue
             t = self._landing_time(dy, vy)
             if t is None or t < 0.04:
@@ -175,7 +257,7 @@ class Planner:
             xt = q.x + q.vx * t
             # Пока команда доходит до игры, герой летит с текущей скоростью.
             x0 = p.x + self.drift
-            dx = wrap_dx(xt - x0, W)
+            dx = self._dx_keep_dir(wrap_dx(xt - x0, W), W)
             reach = ph.run_speed * max(0.0, t - ph.latency) + q.w / 2 + 4
             slack = reach - abs(dx)
             is_current = False
@@ -184,7 +266,7 @@ class Planner:
                 is_current = (abs(wrap_dx(q.x - tx, W)) < 30
                               and abs((q.y - self.world) - twy) < 20)
             # Новой цели нужен запас; уже выбранную держим, пока она достижима.
-            if slack < (-2.0 if is_current else self.x_margin):
+            if slack < (-2.0 if is_current else x_margin):
                 continue
             if self._path_dangerous(sc, p, vy, dx, t):
                 continue
@@ -193,11 +275,12 @@ class Planner:
             # проверяем, что над точкой приземления нет дыры или монстра.
             lx = q.x + q.vx * t
             for h in sc.holes:
-                if abs(wrap_dx(h.x - lx, W)) < max(h.w, h.h) * self.hole_k + 50 and q.y - 230 < h.y < q.y:
-                    score -= 400
+                # (при взлёте предохранитель всё равно уведёт в сторону от дыры)
+                if abs(wrap_dx(h.x - lx, W)) < max(h.w, h.h) * self.hole_k + 40 and q.y - 230 < h.y < q.y:
+                    score -= 160
             for m in sc.monsters:
                 if abs(wrap_dx(m.x - lx, W)) < m.w / 2 + 28 and q.y - 230 < m.y < q.y:
-                    score -= 60 if self.aim_fire else 140
+                    score -= 0 if self.hunting else (100 if self.aim_fire else 300)
             score += 120 if q.bonus else 0
             score -= 50 if q.broken else 0
             score += min(slack, 50) * 0.6                 # запас по горизонтали
@@ -205,12 +288,10 @@ class Planner:
                 score -= 60                               # падать ниже — плохо
             if is_current:
                 score += 35                               # держимся выбранной цели
-            # Если долго прыгаем по одним и тем же платформам (сверху дыра или
-            # нет пути) — штрафуем их, чтобы бот сместился и поискал другой путь.
-            n = sum(1 for _, bx, by in self.bounces
-                    if abs(wrap_dx(q.x - bx, W)) < 40 and abs((q.y - ph.feet - self.world) - by) < 40)
-            if n >= 2:
-                score -= 90 * (n - 1)
+            if stuck >= 6 and dy < 300:
+                # Совсем застряли — меняем позицию: любая платформа в стороне,
+                # даже ниже, лишь бы зайти к верхним с другой стороны.
+                score = -0.2 * q.y + min(abs(wrap_dx(q.x - self.bounces[-1][1], W)), 200) * 2
             if best is None or score > best[0]:
                 best = (score, q, xt, dx, t, x0, reach)
         if best is None:
@@ -218,10 +299,17 @@ class Planner:
         # Садимся не в центр, а на тот край цели, что ближе к следующей ступеньке.
         score, q, xt, dx, t, x0, reach = best
         nxt = [q2 for q2 in sc.platforms if 20 < q.y - q2.y < 150 and not q2.broken]
-        if nxt:
-            q2 = min(nxt, key=lambda q2: abs(wrap_dx(q2.x - xt, W)))
-            off = max(-q.w / 2 + 12, min(q.w / 2 - 12, wrap_dx(q2.x - xt, W)))
-            dx2 = wrap_dx(xt + off - x0, W)
+        prey = [m for m in sc.monsters if q.y - 260 < m.y < q.y
+                and abs(wrap_dx(m.x - xt, W)) < q.w / 2 + m.w / 2] if self.hunting else []
+        aim = None
+        if prey:
+            # Охота: встаём точно под монстра, чтобы бросок попал.
+            aim = prey[0].x
+        elif nxt:
+            aim = min(nxt, key=lambda q2: abs(wrap_dx(q2.x - xt, W))).x
+        if aim is not None:
+            off = max(-q.w / 2 + 6, min(q.w / 2 - 6, wrap_dx(aim - xt, W)))
+            dx2 = self._dx_keep_dir(wrap_dx(xt + off - x0, W), W)
             if abs(dx2) <= reach - abs(off) - self.x_margin:
                 xt, dx = xt + off, dx2
         return score, q, xt, dx, t
@@ -250,6 +338,7 @@ class Planner:
                 break
 
         self.drift = self._drift(t)
+        self.hunting = self._stuck_level(p, W) >= 3 and any(m.y < p.y for m in sc.monsters)
         self.bounces = [b for b in self.bounces if t - b[0] < 8.0]
         best = self._choose_target(sc, p)
         if best is not None:
@@ -276,6 +365,9 @@ class Planner:
                 if abs(dx) > self.deadband:
                     plan.move = "right" if dx > 0 else "left"
                 plan.target = (q.x, q.y)
+        plan.move, overridden = self._safe_move(sc, p, plan.move)
+        if overridden:
+            plan.note += " SAFE"
         if plan.move != self.held:
             self.held = plan.move
             self.held_since = t
