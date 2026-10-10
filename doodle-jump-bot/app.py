@@ -230,6 +230,13 @@ class App:
         self.latency_lbl = ttk.Label(row, width=7)
         self.latency_lbl.pack(side="left")
         self._latency_moved(save=False)
+        row2 = ttk.Frame(f3)
+        row2.pack(fill="x", padx=8, pady=(0, 8))
+        ttk.Label(row2, text="Застрял без прогресса — прыгнуть в бездну через").pack(side="left")
+        self.stuck_s = tk.IntVar(value=int(self.cfg.get("planner", {}).get("stuck_restart_s", 25)))
+        ttk.Spinbox(row2, from_=0, to=300, increment=5, width=4, textvariable=self.stuck_s,
+                    command=self._save_settings).pack(side="left", padx=4)
+        ttk.Label(row2, text="с (0 — никогда)").pack(side="left")
 
         f4 = ttk.LabelFrame(left, text="Журнал")
         f4.pack(fill="both", **pad)
@@ -382,6 +389,10 @@ class App:
         self.cfg["throw"] = self.throw.get()
         self.cfg["restart"] = bool(self.restart.get())
         self.cfg.setdefault("physics", {})["latency"] = round(self.latency.get() / 1000, 3)
+        try:
+            self.cfg.setdefault("planner", {})["stuck_restart_s"] = max(0, int(self.stuck_s.get()))
+        except (tk.TclError, ValueError):
+            pass
         engine.save_config(self.cfg)
 
     def _latency_moved(self, save=True):
