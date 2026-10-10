@@ -44,8 +44,12 @@ class Planner:
         self.adapt = cfg.get("adapt_physics", True)
         self.apex_margin = cfg.get("apex_margin", 10.0)
         self.x_margin = cfg.get("x_margin", 6.0)
-        self.hole_k = cfg.get("hole_radius_k", 0.6)    # радиус опасной зоны дыры = k * размер + 50
-        # (по записи: ближе ~80 px к центру дыра затягивает героя со скоростью ~170 px/с)
+        # Чёрная дыра (по записям): убивает касание центра, а в радиусе ~110 px
+        # затягивает героя — тем сильнее, чем ближе (у центра ~400 px/с).
+        self.hole_kill_k = cfg.get("hole_kill_k", 0.25)   # смертельный радиус = k * размер + 20
+        self.hole_margin = cfg.get("hole_margin", 10.0)   # запас к смертельному радиусу
+        self.pull_r = cfg.get("hole_pull_radius", 110.0)
+        self.pull_v = cfg.get("hole_pull_speed", 400.0)
         self.reset()
 
     def reset(self):
@@ -140,25 +144,72 @@ class Planner:
             return None
         return (-vy + math.sqrt(disc)) / g
 
+    def _kill_r(self, h):
+        return max(h.w, h.h) * self.hole_kill_k + 20 + self.hole_margin
+
+    def _pull(self, sc: Scene, x, y):
+        """Скорость, с которой дыры тянут героя в точке (x, y)."""
+        W = sc.width
+        vx = vy = 0.0
+        for h in sc.holes:
+            hx, hy = wrap_dx(h.x - x, W), h.y - y
+            d = math.hypot(hx, hy)
+            if 1.0 < d < self.pull_r:
+                v = self.pull_v * (1.0 - d / self.pull_r)
+                vx += v * hx / d
+                vy += v * hy / d
+        return vx, vy
+
+    def _hole_gap(self, sc: Scene, x, y):
+        """Расстояние до смертельной зоны ближайшей дыры (< 0 — смерть)."""
+        W = sc.width
+        return min((math.hypot(wrap_dx(x - h.x, W), y - h.y) - self._kill_r(h) for h in sc.holes),
+                   default=1e9)
+
+    def _rise_safe(self, sc: Scene, lx, ly):
+        """Взлёт после отскока в точке (lx, ly): можно ли пролететь мимо дыр,
+        уходя от них вбок? Учитываем затягивание."""
+        if not sc.holes:
+            return True
+        ph = self.ph
+        W = sc.width
+        x, y, vy = lx, ly, -ph.jump_speed
+        t, dt = 0.0, 0.02
+        while vy < 0 and t < 1.0:
+            h = min(sc.holes, key=lambda h: math.hypot(wrap_dx(x - h.x, W), y - h.y))
+            away = 1.0 if wrap_dx(x - h.x, W) >= 0 else -1.0
+            px, py = self._pull(sc, x, y)
+            steer = away * ph.run_speed if t >= ph.latency else 0.0
+            x = (x + (steer + px) * dt) % W
+            vy += ph.gravity * dt
+            y += (vy + py) * dt
+            if self._hole_gap(sc, x, y) < 0:
+                return False
+            t += dt
+        return True
+
     def _path_dangerous(self, sc: Scene, p, vy, dx, t_end):
         """Симулируем полёт к цели и проверяем дыры и монстров на пути."""
         ph = self.ph
         W = sc.width
-        steps = max(2, int(t_end / 0.03))
-        for i in range(steps + 1):
-            t = t_end * i / steps
-            move = max(0.0, t - ph.latency) * ph.run_speed
-            x = p.x + math.copysign(min(abs(dx), move), dx)
-            y = p.y + vy * t + 0.5 * ph.gravity * t * t
-            for h in sc.holes:
-                # Убивает только касание центра дыры — держим запас вокруг него.
-                r = max(h.w, h.h) * self.hole_k + 50
-                if wrap_dx(x - h.x, W) ** 2 + (y - h.y) ** 2 < r * r:
-                    return True
+        x, y, v = p.x + 0.0, p.y + 0.0, vy
+        moved, t, dt = 0.0, 0.0, 0.02
+        steer = math.copysign(ph.run_speed, dx)
+        while t <= t_end:
+            if t >= ph.latency and moved < abs(dx):
+                x += steer * dt
+                moved += ph.run_speed * dt
+            px, py = self._pull(sc, x, y)
+            x += px * dt
+            v += ph.gravity * dt
+            y += (v + py) * dt
+            t += dt
+            if sc.holes and self._hole_gap(sc, x, y) < 0:
+                return True
             for m in sc.monsters:
                 if self._will_shoot(m, p):
                     continue
-                falling = vy + ph.gravity * t > 0
+                falling = v > 0
                 # Прыжок сверху на монстра безопасен (он работает как платформа).
                 if falling and y + ph.feet < m.y:
                     continue
@@ -181,18 +232,18 @@ class Planner:
             if t >= ph.latency and (travel is None or moved < travel):
                 x = (x + dirv * ph.run_speed * dt) % W
                 moved += ph.run_speed * dt
+            px, py = self._pull(sc, x, y)
+            x = (x + px * dt) % W
             oy = y
             vy += ph.gravity * dt
-            y += vy * dt
+            y += (vy + py) * dt
             if vy > 0:
                 for q in sc.platforms:
                     if oy + ph.feet <= q.y <= y + ph.feet and abs(wrap_dx(x - q.x, W)) < q.w / 2 + 10:
                         vy, y = -ph.jump_speed, q.y - ph.feet
                         break
-            for h in sc.holes:
-                r = max(h.w, h.h) * self.hole_k + 50
-                d = math.hypot(wrap_dx(x - h.x, W), y - h.y) - r
-                best = min(best, d)
+            if sc.holes:
+                best = min(best, self._hole_gap(sc, x, y))
             for m in sc.monsters:
                 if vy > 0 and y + ph.feet < m.y:
                     continue                      # прыжок сверху — безопасно
@@ -278,23 +329,24 @@ class Planner:
             # После приземления герой снова взлетит вертикально вверх —
             # проверяем, что над точкой приземления нет дыры или монстра.
             lx = q.x + q.vx * t
-            rise = ph.jump_speed ** 2 / (2 * ph.gravity)
-            away, blocked = None, False
-            for h in sc.holes:
-                r = max(h.w, h.h) * self.hole_k + 50
-                if not (q.y - ph.feet - rise - r < h.y < q.y + r):
-                    continue
-                hdx = wrap_dx(lx - h.x, W)            # где платформа относительно дыры
-                far = abs(hdx) + q.w / 2 - 8          # дальний от дыры край платформы
-                if far < r + 6:
-                    blocked = True                     # с этой платформы взлетим в дыру
-                elif abs(hdx) < r + q.w / 2:
-                    away = 1 if hdx >= 0 else -1       # садиться на дальний край
-            if blocked:
-                continue
+            away = None
+            ly = q.y - ph.feet
+            near = [h for h in sc.holes if abs(wrap_dx(lx - h.x, W)) < self.pull_r + q.w / 2
+                    and ly - 260 - self.pull_r < h.y < ly + self.pull_r]
+            if near:
+                h = min(near, key=lambda h: abs(wrap_dx(lx - h.x, W)))
+                side = 1 if wrap_dx(lx - h.x, W) >= 0 else -1
+                far_x = lx + side * (q.w / 2 - 6)          # дальний от дыры край
+                if not self._rise_safe(sc, far_x, ly):
+                    continue                             # с этой платформы затянет в дыру
+                if not self._rise_safe(sc, lx, ly):
+                    away = side                          # садиться только на дальний край
+                score -= 40                              # рядом с дырой всё же рискованно
             for m in sc.monsters:
                 if abs(wrap_dx(m.x - lx, W)) < m.w / 2 + 28 and q.y - 230 < m.y < q.y:
                     score -= 0 if self.hunting else (100 if self.aim_fire else 300)
+            if q.y > sc.height - 70:
+                score -= 150                              # у нижнего края — легко упасть
             score += 120 if q.bonus else 0
             score -= 50 if q.broken else 0
             score += min(slack, 50) * 0.6                 # запас по горизонтали
@@ -302,7 +354,7 @@ class Planner:
                 score -= 60                               # падать ниже — плохо
             if is_current:
                 score += 35                               # держимся выбранной цели
-            if stuck >= 6 and dy < 300:
+            if stuck >= 6 and dy < 300 and q.y < sc.height * 0.75:
                 # Совсем застряли — меняем позицию: любая платформа в стороне,
                 # даже ниже, лишь бы зайти к верхним с другой стороны.
                 score = -0.2 * q.y + min(abs(wrap_dx(q.x - self.bounces[-1][1], W)), 200) * 2
@@ -339,6 +391,10 @@ class Planner:
         plan = Plan()
         if not self._update_state(sc, t):
             plan.note = "no player"
+            # Герой пропал на пару кадров (например, наполовину ушёл за край
+            # экрана) — продолжаем начатое движение, а не бросаем управление.
+            if self.lost_frames <= 6:
+                plan.move = self.held
             return plan
         p = sc.player
         W = sc.width

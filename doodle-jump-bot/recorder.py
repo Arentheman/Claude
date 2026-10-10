@@ -26,8 +26,9 @@ from vision import draw_debug
 CLIP_SECONDS = 8.0          # сколько секунд до падения сохранять
 CLIP_FPS = 20.0             # ролики падений: кадров в секунду
 CLIP_W = 366                # и ширина (3/4 от игровой) — чтобы zip был небольшим
-TIMELINE_FPS = 4.0
-TIMELINE_W = 220
+TIMELINE_FPS = 2.0          # общий таймлайн — мелко и редко: 25 минут ≈ 8 МБ
+TIMELINE_W = 160
+ZIP_LIMIT = 25 * 1024 * 1024  # больше этого чат не принимает — тогда без таймлайна
 
 
 def default_root():
@@ -187,9 +188,17 @@ class Recorder:
         with open(os.path.join(self.dir, "summary.json"), "w", encoding="utf-8") as f:
             json.dump(summary, f, ensure_ascii=False, indent=2)
         zpath = self.dir + ".zip"
-        with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
-            for root, _, files in os.walk(self.dir):
-                for name in files:
-                    full = os.path.join(root, name)
-                    z.write(full, os.path.relpath(full, os.path.dirname(self.dir)))
+        # Главное — телеметрия, сводка и ролики падений. Таймлайн кладём, только
+        # если zip остаётся небольшим (его можно отправить в чат).
+        for with_timeline in (True, False):
+            with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
+                for root, _, files in os.walk(self.dir):
+                    for name in files:
+                        if name == "timeline.mp4" and not with_timeline:
+                            continue
+                        full = os.path.join(root, name)
+                        z.write(full, os.path.relpath(full, os.path.dirname(self.dir)))
+            if os.path.getsize(zpath) <= ZIP_LIMIT:
+                break
+            self.log("Запись: таймлайн слишком большой — в zip не положен (лежит в папке записи)")
         return zpath
